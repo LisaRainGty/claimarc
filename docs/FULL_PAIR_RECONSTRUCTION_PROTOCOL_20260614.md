@@ -567,6 +567,53 @@ the high-recall claim repair queue can recover many missing-claim rows, while
 the joint reviewer and promotion gate still reject noisy, adjacent-attribute, or
 identity-inferred claims.
 
+Full-seed120 claim-only expansion:
+
+| item | count |
+|---|---:|
+| claim-repair seed rows | 120 |
+| exact SRT claim found | 99 |
+| no exact SRT claim | 21 |
+| total recovered claim candidates | 580 |
+| median candidates per row | 3 |
+| rows with 11+ candidates | 15 |
+
+Because wide-recall rows can contain many adjacent-attribute claims, the joint
+review bridge now supports `--sort_by fewer_claims`.  A low-noise review batch
+was built from the 120-row seed by selecting 40 rows with 1-4 exact claim
+candidates:
+
+- queue:
+  `docs/FULL_PAIR_CLAIM_REEXTRACT_FULL_P0_STRONGWEAK120_LOWNOISE40_JOINT_REVIEW_QUEUE_20260614.md`
+- audit v3:
+  `docs/FULL_PAIR_CLAIM_REEXTRACT_FULL_P0_STRONGWEAK120_LOWNOISE40_NOIMG_AUDIT_V3_20260614.md`
+- promotion v3:
+  `docs/FULL_PAIR_CLAIM_REEXTRACT_FULL_P0_STRONGWEAK120_LOWNOISE40_NOIMG_PROMOTION_V3_20260614.md`
+
+Low-noise40 result after numeric-value and commercial-promise gates:
+
+| state | count |
+|---|---:|
+| conservative main rows | 8 |
+| `main_positive_refute` | 6 |
+| `main_negative_support` | 2 |
+| `silver_refute_insufficient_product_evidence` | 8 |
+| `silver_refute_missing_product_evidence` | 4 |
+| `repair_missing_claim` | 11 |
+| `repair_identity_claim_value` | 2 |
+| `repair_numeric_value_judgment` | 2 |
+| `silver_commercial_promise_attribute` | 1 |
+
+Additional guards added from this audit:
+
+- Price/quantity/net-content/size-like attributes require an actual observed
+  value/specification conflict.  Consumer complaints such as "too expensive",
+  "too little", or "not worth it" are value judgments and cannot trigger
+  `new_y=1` by themselves.
+- Commercial-promise attributes such as `售卖方式`, `购买渠道`, and `广告宣传`
+  are preserved, but main promotion requires manual or stricter same-promise
+  verification; otherwise they route to `silver_commercial_promise_attribute`.
+
 Claim-only re-extraction with `llm_pair_claim_reextract_v1` on these 44 rows
 found exact SRT claim candidates for 23 rows and no claim for 21 rows.  This
 confirms that the missing-claim pool mixes true source-missing rows with
@@ -652,6 +699,7 @@ Promotion states:
   `silver_refute_insufficient_product_evidence`, `repair_missing_claim`,
   `repair_missing_evidence`, `repair_insufficient_product_evidence`,
   `repair_identity_claim_value`, `silver_mixed_comment_relation`, and
+  `repair_numeric_value_judgment`, `silver_commercial_promise_attribute`, and
   `lowinfo_no_aligned_comment` remain outside the main benchmark but are
   preserved for repair, weighting, and mechanism analysis.
 

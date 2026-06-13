@@ -153,6 +153,7 @@ def main() -> None:
     ap.add_argument("--markdown", default="docs/FULL_PAIR_CLAIM_REEXTRACT_JOINT_REVIEW_QUEUE_20260614.md")
     ap.add_argument("--max_claims", type=int, default=8)
     ap.add_argument("--limit", type=int, default=0)
+    ap.add_argument("--sort_by", choices=["more_claims", "fewer_claims"], default="more_claims")
     args = ap.parse_args()
 
     queue_by_pair = read_by_pair(args.queue)
@@ -170,11 +171,18 @@ def main() -> None:
             continue
         selected.append(build_item(row, result, args.max_claims))
 
-    selected.sort(key=lambda r: (
-        -int((r.get("_claim_reextract_review") or {}).get("seeded_claim_count", 0) or 0),
-        clean(r.get("category")),
-        pair_id(r),
-    ))
+    if args.sort_by == "fewer_claims":
+        selected.sort(key=lambda r: (
+            int((r.get("_claim_reextract_review") or {}).get("seeded_claim_count", 0) or 0),
+            clean(r.get("category")),
+            pair_id(r),
+        ))
+    else:
+        selected.sort(key=lambda r: (
+            -int((r.get("_claim_reextract_review") or {}).get("seeded_claim_count", 0) or 0),
+            clean(r.get("category")),
+            pair_id(r),
+        ))
     if args.limit and args.limit > 0:
         selected = selected[:args.limit]
     write_jsonl(args.out, selected)
@@ -189,6 +197,7 @@ def main() -> None:
         "claim_found_pairs": len([r for r in results if clean(r.get("status")) == "claim_found"]),
         "no_claim_pairs": no_claim_pairs,
         "missing_queue_rows": missing_queue,
+        "sort_by": args.sort_by,
         "seeded_claim_count_bucket": dict(Counter(count_bucket(int((r.get("_claim_reextract_review") or {}).get("seeded_claim_count", 0) or 0)) for r in selected)),
         "category": dict(Counter(clean(r.get("category")) for r in selected)),
         "examples": [

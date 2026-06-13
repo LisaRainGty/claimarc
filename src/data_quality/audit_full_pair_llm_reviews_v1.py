@@ -46,6 +46,12 @@ VALID_CLAIM_EVIDENCE_REL = {
 }
 VALID_COMMENT_REL = {"support", "refute", "mixed", "unclear", "not_aligned", ""}
 IDENTITY_VALUE_ATTRS = {"品牌", "型号", "货号", "条码", "条形码", "执行标准"}
+PRICE_ATTR_TERMS = {"价格", "售价", "到手价"}
+QUANTITY_ATTR_TERMS = {"净含量", "数量", "包数", "袋数", "件数", "重量", "容量", "尺寸"}
+PRICE_VALUE_JUDGMENT_TERMS = {"太贵", "偏贵", "不便宜", "小贵", "不值", "物没价廉", "价格合理", "合理性"}
+QUANTITY_VALUE_JUDGMENT_TERMS = {"太少", "少的可怜", "量少", "分量少", "不多", "最少也得", "应该", "应为", "不够"}
+NUMERIC_CONFLICT_CUES = {"不是", "不符", "少发", "少给", "只有", "收到少", "实付", "到手不是", "降价", "买成"}
+COMMERCIAL_PROMISE_ATTRS = {"售卖方式", "购买渠道", "广告宣传", "宣传", "活动信息"}
 
 
 def clean(value: Any) -> str:
@@ -93,6 +99,40 @@ def claim_contains_identity_value(queue_row: dict[str, Any], claim_text: str) ->
         return None
     claim_norm = compact(claim_text)
     return any(compact(v) and compact(v) in claim_norm for v in vals)
+
+
+def numeric_value_judgment_refutes(queue_row: dict[str, Any], review: dict[str, Any]) -> list[str]:
+    attr = clean(queue_row.get("attribute_name")).strip("<>")
+    is_price = any(t in attr for t in PRICE_ATTR_TERMS)
+    is_quantity = any(t in attr for t in QUANTITY_ATTR_TERMS)
+    if not is_price and not is_quantity:
+        return []
+    mentions = queue_row.get("consumer_mentions") or []
+    out: list[str] = []
+    for item in review.get("comment_judgments") or []:
+        if not isinstance(item, dict):
+            continue
+        if not item.get("aligned_to_claim") or clean(item.get("relation")) != "refute":
+            continue
+        try:
+            cid = int(item.get("cid", 0) or 0)
+        except Exception:
+            cid = 0
+        text = clean(mentions[cid - 1].get("evidence_span")) if 1 <= cid <= len(mentions) else ""
+        reason = clean(item.get("reason"))
+        blob = text + " " + reason
+        if any(cue in blob for cue in NUMERIC_CONFLICT_CUES):
+            continue
+        if is_price and any(term in blob for term in PRICE_VALUE_JUDGMENT_TERMS):
+            out.append(f"cid={cid}:price_value_judgment")
+        if is_quantity and any(term in blob for term in QUANTITY_VALUE_JUDGMENT_TERMS):
+            out.append(f"cid={cid}:quantity_value_judgment")
+    return out[:5]
+
+
+def commercial_promise_attr(queue_row: dict[str, Any]) -> bool:
+    attr = clean(queue_row.get("attribute_name")).strip("<>")
+    return attr in COMMERCIAL_PROMISE_ATTRS
 
 
 def read_reviews(path: str | Path) -> tuple[dict[str, dict[str, Any]], Counter]:
@@ -253,6 +293,12 @@ def audit_one(queue_row: dict[str, Any], review: dict[str, Any] | None) -> dict[
         add_flag(flags, "medium", "invalid_action", action)
     if action == "promote_candidate" and claim_evidence_relation in {"", "insufficient"}:
         add_flag(flags, "high", "promote_with_insufficient_claim_evidence_relation", claim_evidence_relation or "empty")
+    numeric_judgments = numeric_value_judgment_refutes(queue_row, review)
+    if numeric_judgments:
+        severity = "high" if state in {"main_positive_refute", "main_negative_support"} or action == "promote_candidate" else "medium"
+        add_flag(flags, severity, "numeric_value_judgment_used_as_refute", ";".join(numeric_judgments))
+    if commercial_promise_attr(queue_row) and state in {"main_positive_refute", "main_negative_support"}:
+        add_flag(flags, "medium", "commercial_promise_attribute_requires_manual")
 
     expected_y = 1 if claim_found and rel.get("refute", 0) > 0 else 0
     if new_y != expected_y:

@@ -23,6 +23,12 @@ from data_quality.rebuild_repaired_datasets_v1 import assign_room_splits, split_
 
 
 IDENTITY_VALUE_ATTRS = {"品牌", "型号", "货号", "条码", "条形码", "执行标准"}
+PRICE_ATTR_TERMS = {"价格", "售价", "到手价"}
+QUANTITY_ATTR_TERMS = {"净含量", "数量", "包数", "袋数", "件数", "重量", "容量", "尺寸"}
+PRICE_VALUE_JUDGMENT_TERMS = {"太贵", "偏贵", "不便宜", "小贵", "不值", "物没价廉", "价格合理", "合理性"}
+QUANTITY_VALUE_JUDGMENT_TERMS = {"太少", "少的可怜", "量少", "分量少", "不多", "最少也得", "应该", "应为", "不够"}
+NUMERIC_CONFLICT_CUES = {"不是", "不符", "少发", "少给", "只有", "收到少", "实付", "到手不是", "降价", "买成"}
+COMMERCIAL_PROMISE_ATTRS = {"售卖方式", "购买渠道", "广告宣传", "宣传", "活动信息"}
 
 
 def clean(value: Any) -> str:
@@ -96,6 +102,39 @@ def identity_claim_lacks_value(queue_row: dict[str, Any], review: dict[str, Any]
     return not any(compact(v) and compact(v) in claim_norm for v in vals)
 
 
+def numeric_value_judgment_refutes(queue_row: dict[str, Any], review: dict[str, Any]) -> bool:
+    attr = clean(queue_row.get("attribute_name")).strip("<>")
+    is_price = any(t in attr for t in PRICE_ATTR_TERMS)
+    is_quantity = any(t in attr for t in QUANTITY_ATTR_TERMS)
+    if not is_price and not is_quantity:
+        return False
+    mentions = queue_row.get("consumer_mentions") or []
+    for item in review.get("comment_judgments") or []:
+        if not isinstance(item, dict):
+            continue
+        if not item.get("aligned_to_claim") or clean(item.get("relation")) != "refute":
+            continue
+        try:
+            cid = int(item.get("cid", 0) or 0)
+        except Exception:
+            cid = 0
+        text = clean(mentions[cid - 1].get("evidence_span")) if 1 <= cid <= len(mentions) else ""
+        reason = clean(item.get("reason"))
+        blob = text + " " + reason
+        if any(cue in blob for cue in NUMERIC_CONFLICT_CUES):
+            continue
+        if is_price and any(term in blob for term in PRICE_VALUE_JUDGMENT_TERMS):
+            return True
+        if is_quantity and any(term in blob for term in QUANTITY_VALUE_JUDGMENT_TERMS):
+            return True
+    return False
+
+
+def commercial_promise_attr(queue_row: dict[str, Any]) -> bool:
+    attr = clean(queue_row.get("attribute_name")).strip("<>")
+    return attr in COMMERCIAL_PROMISE_ATTRS
+
+
 def confidence_score(value: str) -> float:
     value = clean(value).lower()
     if value == "high":
@@ -143,6 +182,10 @@ def promotion_state(queue_row: dict[str, Any], review: dict[str, Any], rel: Coun
         return "repair_insufficient_product_evidence"
     if identity_claim_lacks_value(queue_row, review):
         return "repair_identity_claim_value"
+    if numeric_value_judgment_refutes(queue_row, review):
+        return "repair_numeric_value_judgment"
+    if commercial_promise_attr(queue_row):
+        return "silver_commercial_promise_attribute"
     if rel.get("refute", 0) > 0:
         return "main_positive_refute"
     if rel.get("support", 0) > 0 and rel.get("mixed", 0) == 0:

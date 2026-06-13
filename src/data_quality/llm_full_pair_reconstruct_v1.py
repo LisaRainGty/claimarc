@@ -135,6 +135,9 @@ OCR 候选：
 - product evidence 只能来自商品标题、参数、详情图 OCR 或详情图视觉观察；不能来自主播/SRT 或评论。
 - 评论是否构成标签，只看它是否和 repaired claim 的同一具体命题形成支持/反驳关系。
 - 评论泛泛说质量差、体验差、大小不合适，但没有反驳 claim 的具体事实，判 not_aligned 或 unclear，不得触发 new_y=1。
+- 对价格、数量、净含量、尺寸、重量等数值/规格 claim：只有评论给出与 claim 不同的实际数值、规格或收到数量，才算 refute；"太贵"、"不值"、"太少"、"不够大"、"应该更多"这类价值判断或期望落差不算 refute。
+- 如果评论确认了 claim 数值但表达不满（如 claim=100g，评论=收到100g但太少），应判 support 或 not_aligned，不能判 refute。
+- 对售卖渠道/售卖方式 claim：只有评论直接否定同一渠道、同一售卖单位或同一承诺，才算 refute；只提其它直播间、优惠券、链接差异或购买体验不算 refute。
 - product evidence 与 claim 客观矛盾本身不能直接触发 new_y=1；必须存在消费者评论 refute claim。
 - 如果 claim 缺失，输出 new_y=0 且 action=rerun_claim 或 drop_no_reconstructable_claim。
 

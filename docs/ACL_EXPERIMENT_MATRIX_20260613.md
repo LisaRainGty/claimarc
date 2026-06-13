@@ -137,6 +137,29 @@ targets strong SRT candidates with strong consumer triggers, while still using
 strict post-retrieval gates.  This is now the preferred route for scaling from
 pilot data to a paper-sized full-pair benchmark.
 
+Full P0 strong/weak seed120 and low-noise40 result:
+
+| item | count |
+|---|---:|
+| claim-repair seed rows | 120 |
+| exact SRT claim found | 99 |
+| no exact SRT claim | 21 |
+| recovered claim candidates | 580 |
+| low-noise joint-review rows | 40 |
+| conservative main rows after all gates | 8 |
+| main positives / negatives | 6 / 2 |
+| evidence-silver rows | 12 |
+| missing-claim repairs | 11 |
+| identity/numeric/commercial-promise repairs | 2 / 2 / 1 |
+
+Two gate corrections were added after manual inspection of the low-noise40
+main candidates:
+
+- Numeric and price-like claims require actual value/specification conflict;
+  value judgments such as "too expensive" or "too little" remain repair/silver.
+- Commercial-promise attributes are preserved but routed to silver unless the
+  same promise is directly verified.
+
 Label policy for this reset:
 
 - old `y/c` are audit-only fields;
