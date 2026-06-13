@@ -1049,3 +1049,32 @@ View-consistency status:
   remote PyTorch build, so the retry removes that allocator option.
 - Active retry:
   `cv_attrpol_aux_atomic_hardclean_viewcons002_w025_cap1500_bs4_retry_s0_20260613`.
+
+View-consistency retry status:
+
+- Stopped during fold 0.  `bs=4` avoided immediate OOM, but the double-view
+  forward made the CL phase too slow, and warmup validation did not improve over
+  hardclean (ep1 val Macro-F1 0.8897, AP 0.8540 vs hardclean ep1 Macro-F1
+  0.9035, AP 0.8465).
+- Decision: keep evidence-view consistency as a future implementation task only
+  if we redesign it offline or apply it to a smaller source-specific subset.
+- New active run:
+  `cv_attrpol_aux_atomic_hardclean_sourceaux002_w025_cap1500_bs8_s0_20260613`.
+  It keeps hardclean data and RACL unchanged, adding only lightweight source
+  auxiliary heads on the retrieval embedding (`combo=0.02`, `confidence=0.02`,
+  `count=0.01`).
+
+Source-auxiliary status:
+
+- Stopped after fold 0.  It did not beat the hardclean anchor:
+  - source-aux PCLS: AP 0.8701, AUROC 0.9454, Macro-F1 0.8888, wF1 0.7702
+  - source-aux selectiveRKC: AP 0.8768, AUROC 0.9470, Macro-F1 0.8989, wF1 0.7984
+  - hardclean fold-0 anchor: PCLS AP 0.8868, AUROC 0.9523, Macro-F1 0.9124,
+    wF1 0.8370; selectiveRKC AP 0.8895, AUROC 0.9532, Macro-F1 0.9148,
+    wF1 0.8377
+- Decision: source metadata prediction is useful as a diagnostic/mechanism
+  target, but not as a training regularizer in the current architecture.
+- New active run:
+  `cv_attrpol_aux_atomic_hardclean_lcl025_w025_cap1500_bs8_s0_20260613`.
+  This keeps the data, retrieval mechanism, and architecture fixed, changing
+  only the contrastive weight from `lambda_cl=0.5` to `0.25`.
