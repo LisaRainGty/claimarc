@@ -173,14 +173,52 @@ The output is an audit artifact, not a direct training dataset.  A later
 promotion step must verify provenance, source coverage, split hygiene, and
 label-confidence calibration before building the final supervised benchmark.
 
+## Promotion Builder
+
+Promotion builder:
+
+- `src/data_quality/build_full_pair_promoted_dataset_v1.py`
+
+Default command after LLM/VLM reviews exist:
+
+```bash
+PYTHONPATH=src python3 -m data_quality.build_full_pair_promoted_dataset_v1
+```
+
+Outputs:
+
+- stateful reviewed view:
+  `data/final/repaired_v1/dataset_full_pair_reconstruction_stateful_v1_20260614.jsonl`
+- conservative main supervised candidate:
+  `data/final/repaired_v1/dataset_full_pair_reconstruction_main_v1_20260614.jsonl`
+- repair/silver queue:
+  `data/final/repaired_v1/full_pair_reconstruction_repair_silver_v1_20260614.jsonl`
+- report:
+  `data/final/repaired_v1/full_pair_reconstruction_promotion_v1_20260614.report.json`
+
+Promotion states:
+
+- `main_positive_refute`: claim found, product evidence found, and at least one
+  aligned consumer comment refutes the same claim.
+- `main_negative_support`: claim found, product evidence found, and aligned
+  consumer comments support rather than refute the claim.
+- `silver_refute_missing_product_evidence`, `repair_missing_claim`,
+  `repair_missing_evidence`, `silver_mixed_comment_relation`, and
+  `lowinfo_no_aligned_comment` remain outside the main benchmark but are
+  preserved for repair, weighting, and mechanism analysis.
+
+The builder uses conservative reliability weights.  A single high-confidence
+LLM/VLM reconstruction with one explicit aligned refuting comment receives a
+moderate high weight around `0.70`, not a near-gold weight.
+
 ## Immediate Next Steps
 
 1. Run a P0 pilot once the remote API environment is configured, then manually
    inspect at least 30 reconstructed examples across categories and attribute
    families.
-2. Add a promotion builder that converts accepted rows into complete
-   `(claim, product evidence, comment-aligned label)` training rows without
-   dropping unrecovered but valid hard cases.
+2. Run the promotion builder after the pilot to inspect state distribution and
+   confirm that main rows have complete `(claim, product evidence,
+   comment-aligned label)` provenance.
 3. Rebuild grouped train/validation/test splits by product or room before any
    model comparison.
 4. Re-run baseline and CLAIMARC experiments only after the new full-pair

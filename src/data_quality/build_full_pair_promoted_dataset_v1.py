@@ -1,0 +1,310 @@
+"""Promote full-pair LLM/VLM reconstruction reviews into dataset views.
+
+The promotion step is intentionally conservative:
+
+- LLM output is not written directly as a training dataset.
+- Every reviewed row is preserved in a stateful audit view.
+- The main supervised candidate only includes complete rows where a recovered
+  claim, product evidence, and at least one claim-aligned consumer comment are
+  available.
+- Missing or ambiguous rows become repair/silver states instead of being
+  deleted or converted into clean negatives.
+"""
+from __future__ import annotations
+
+import argparse
+import json
+from collections import Counter
+from pathlib import Path
+from typing import Any
+
+from common.io_utils import read_jsonl, write_json, write_jsonl
+from data_quality.rebuild_repaired_datasets_v1 import assign_room_splits, split_leakage
+
+
+def clean(value: Any) -> str:
+    return str(value or "").strip()
+
+
+def pair_id(row: dict[str, Any]) -> str:
+    return str(row.get("pair_id") or f"p{row.get('product_id')}__{row.get('attribute_id')}")
+
+
+def read_by_pair(path: str | Path) -> dict[str, dict[str, Any]]:
+    if not Path(path).exists():
+        return {}
+    out: dict[str, dict[str, Any]] = {}
+    for row in read_jsonl(path):
+        out[pair_id(row)] = row
+    return out
+
+
+def aligned_comments(queue_row: dict[str, Any], review: dict[str, Any]) -> list[dict[str, Any]]:
+    mentions = queue_row.get("consumer_mentions") or []
+    out: list[dict[str, Any]] = []
+    for j in review.get("comment_judgments") or []:
+        try:
+            cid = int(j.get("cid", 0) or 0)
+        except Exception:
+            cid = 0
+        if cid < 1 or cid > len(mentions):
+            continue
+        m = dict(mentions[cid - 1])
+        m["_judgment"] = {
+            "cid": cid,
+            "aligned_to_claim": bool(j.get("aligned_to_claim")),
+            "relation": clean(j.get("relation")),
+            "reason": clean(j.get("reason")),
+        }
+        if m["_judgment"]["aligned_to_claim"]:
+            out.append(m)
+    return out
+
+
+def relation_counts(aligned: list[dict[str, Any]]) -> Counter:
+    return Counter(clean(m.get("_judgment", {}).get("relation")) for m in aligned)
+
+
+def confidence_score(value: str) -> float:
+    value = clean(value).lower()
+    if value == "high":
+        return 0.08
+    if value == "medium":
+        return 0.04
+    return 0.0
+
+
+def reliability(queue_row: dict[str, Any], review: dict[str, Any], aligned: list[dict[str, Any]]) -> float:
+    score = 0.05
+    if review.get("claim_found"):
+        score += 0.18
+    if review.get("product_evidence_found"):
+        score += 0.15
+    if aligned:
+        score += 0.15
+    if any(clean(m.get("_judgment", {}).get("relation")) == "refute" for m in aligned):
+        score += 0.05
+    if any(clean(m.get("_judgment", {}).get("relation")) == "support" for m in aligned):
+        score += 0.04
+    score += min(0.06, 0.015 * max(0, len(aligned) - 1))
+    score += min(0.06, 0.02 * sum(1 for m in aligned if m.get("explicit_fact_hit")))
+    score += confidence_score(review.get("confidence", ""))
+    if queue_row.get("old_label_state") == "label_positive_claim_aligned_neg" and int(review.get("new_y", 0) or 0) == 1:
+        score += 0.02
+    return round(max(0.03, min(0.88, score)), 4)
+
+
+def promotion_state(review: dict[str, Any], rel: Counter) -> str:
+    if review.get("__error__"):
+        return "llm_error"
+    claim_found = bool(review.get("claim_found"))
+    evidence_found = bool(review.get("product_evidence_found"))
+    if not claim_found:
+        return "repair_missing_claim"
+    if not evidence_found:
+        if rel.get("refute", 0) > 0:
+            return "silver_refute_missing_product_evidence"
+        return "repair_missing_evidence"
+    if rel.get("refute", 0) > 0:
+        return "main_positive_refute"
+    if rel.get("support", 0) > 0 and rel.get("mixed", 0) == 0:
+        return "main_negative_support"
+    if rel.get("mixed", 0) > 0:
+        return "silver_mixed_comment_relation"
+    return "lowinfo_no_aligned_comment"
+
+
+def evidence_payload(review: dict[str, Any]) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]:
+    src_type = clean(review.get("evidence_source_type"))
+    text = clean(review.get("evidence_text"))
+    source = clean(review.get("evidence_source"))
+    if not text:
+        return [], [], []
+    item = {
+        "raw_text": text,
+        "source": source,
+        "_source_type": src_type,
+        "_reconstructed": True,
+    }
+    if src_type in {"params", "product_title"}:
+        item["param_key"] = source or src_type
+        return [item], [], []
+    if src_type == "detail_image_ocr":
+        item["image_path"] = source
+        return [], [item], []
+    if src_type == "detail_image_vlm":
+        item["image_path"] = source
+        item["raw_quote"] = text
+        return [], [], [item]
+    return [item], [], []
+
+
+def build_row(queue_row: dict[str, Any], review: dict[str, Any]) -> dict[str, Any]:
+    aligned = aligned_comments(queue_row, review)
+    rel = relation_counts(aligned)
+    state = promotion_state(review, rel)
+    y = 1 if state == "main_positive_refute" else 0
+    c = reliability(queue_row, review, aligned)
+    ev_params, ev_ocr, ev_vlm = evidence_payload(review)
+    claim_text = clean(review.get("claim_text"))
+    row = {
+        "pair_id": pair_id(queue_row),
+        "product_id": queue_row.get("product_id"),
+        "room_id": queue_row.get("room_id"),
+        "category": queue_row.get("category"),
+        "subcategory": queue_row.get("subcategory"),
+        "attribute_id": queue_row.get("attribute_id"),
+        "attribute_name": queue_row.get("attribute_name"),
+        "product_title": queue_row.get("product_title"),
+        "y": y,
+        "c": c,
+        "confidence": clean(review.get("confidence")) or "low",
+        "claim": {
+            "has_claim_srt": bool(review.get("claim_found")),
+            "passage": claim_text,
+            "segments": [
+                {
+                    "claim_id": f"{pair_id(queue_row)}__fullpair_llm_v1",
+                    "clip_id": clean(review.get("claim_source")),
+                    "start_ts": clean(review.get("claim_timestamp")),
+                    "end_ts": "",
+                    "text": claim_text,
+                    "_reconstructed": True,
+                }
+            ] if claim_text else [],
+        },
+        "evidence_params": ev_params,
+        "evidence_ocr": ev_ocr,
+        "evidence_vlm": ev_vlm,
+        "coverage": int(bool(ev_params)) + int(bool(ev_ocr)) + int(bool(ev_vlm)),
+        "evidence_count": len(ev_params) + len(ev_ocr) + len(ev_vlm),
+        "label_audit": {
+            "policy": "full_pair_reconstruction_v1",
+            "promotion_state": state,
+            "comment_relation_counts": dict(rel),
+            "aligned_comment_count": len(aligned),
+            "label_basis": clean(review.get("label_basis")),
+            "llm_action": clean(review.get("action")),
+            "claim_evidence_relation": clean(review.get("claim_evidence_relation")),
+            "old_y": queue_row.get("old_y"),
+            "old_c": queue_row.get("old_c"),
+            "old_label_state": queue_row.get("old_label_state"),
+            "old_label_role": "audit_only_not_final",
+        },
+        "_full_pair_queue_type": queue_row.get("queue_type"),
+        "_full_pair_priority": queue_row.get("priority"),
+        "_full_pair_reconstruction_flags": queue_row.get("reconstruction_flags"),
+        "_llm_review": {
+            "model": review.get("model"),
+            "claim_found": review.get("claim_found"),
+            "product_evidence_found": review.get("product_evidence_found"),
+            "raw_new_y": review.get("raw_new_y"),
+            "clean_new_y": review.get("new_y"),
+        },
+        "_aligned_consumer_mentions": aligned,
+        "_consumer_mentions_total": queue_row.get("consumer_mentions_total"),
+        "_consumer_mentions_neg": queue_row.get("consumer_mentions_neg"),
+        "_attribute_scope": "product_attribute",
+    }
+    return row
+
+
+def is_main(row: dict[str, Any]) -> bool:
+    state = clean((row.get("label_audit") or {}).get("promotion_state"))
+    return state in {"main_positive_refute", "main_negative_support"}
+
+
+def summarize(rows: list[dict[str, Any]], main_rows: list[dict[str, Any]], missing_reviews: int) -> dict[str, Any]:
+    return {
+        "reviewed_rows": len(rows),
+        "main_rows": len(main_rows),
+        "missing_reviews": missing_reviews,
+        "all_labels": dict(Counter(int(r.get("y", 0)) for r in rows)),
+        "main_labels": dict(Counter(int(r.get("y", 0)) for r in main_rows)),
+        "promotion_state": dict(Counter(clean((r.get("label_audit") or {}).get("promotion_state")) for r in rows)),
+        "confidence": dict(Counter(clean(r.get("confidence")) for r in rows)),
+        "main_split": dict(Counter(clean(r.get("split")) for r in main_rows)),
+        "main_split_leakage": split_leakage(main_rows) if main_rows else {},
+        "category": dict(Counter(clean(r.get("category")) for r in main_rows)),
+    }
+
+
+def write_markdown(path: str | Path, report: dict[str, Any], args: argparse.Namespace) -> None:
+    lines = [
+        "# Full Pair Promoted Dataset v1",
+        "",
+        "This is the promotion report for LLM/VLM full-pair reconstruction reviews.",
+        "The main candidate is conservative; stateful rows preserve all reviewed hard cases.",
+        "",
+        "## Inputs",
+        "",
+        f"- queue: `{args.queue}`",
+        f"- reviews: `{args.reviews}`",
+        "",
+        "## Outputs",
+        "",
+        f"- stateful reviewed rows: `{args.out_all}`",
+        f"- main supervised candidate: `{args.out_main}`",
+        f"- repair/silver rows: `{args.out_repair}`",
+        f"- report json: `{args.report}`",
+        "",
+        "## Summary",
+        "",
+    ]
+    for key, value in report.items():
+        lines.append(f"- `{key}`: `{value}`")
+    lines.extend([
+        "",
+        "## Promotion Rule",
+        "",
+        "- `main_positive_refute`: claim found, product evidence found, and at least one aligned consumer comment refutes the same claim.",
+        "- `main_negative_support`: claim found, product evidence found, and aligned consumer comments support rather than refute the claim.",
+        "- Missing claim, missing product evidence, mixed comments, and no aligned comments remain in stateful repair/silver outputs.",
+    ])
+    Path(path).parent.mkdir(parents=True, exist_ok=True)
+    Path(path).write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
+def main() -> None:
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--queue", default="data/final/repaired_v1/full_pair_reconstruction_queue_v1_20260614.jsonl")
+    ap.add_argument("--reviews", default="data/final/repaired_v1/full_pair_reconstruction_llm_v1_20260614.jsonl")
+    ap.add_argument("--out_all", default="data/final/repaired_v1/dataset_full_pair_reconstruction_stateful_v1_20260614.jsonl")
+    ap.add_argument("--out_main", default="data/final/repaired_v1/dataset_full_pair_reconstruction_main_v1_20260614.jsonl")
+    ap.add_argument("--out_repair", default="data/final/repaired_v1/full_pair_reconstruction_repair_silver_v1_20260614.jsonl")
+    ap.add_argument("--report", default="data/final/repaired_v1/full_pair_reconstruction_promotion_v1_20260614.report.json")
+    ap.add_argument("--markdown", default="docs/FULL_PAIR_PROMOTION_REPORT_20260614.md")
+    args = ap.parse_args()
+
+    queue = read_by_pair(args.queue)
+    reviews = read_by_pair(args.reviews)
+    rows: list[dict[str, Any]] = []
+    missing_reviews = 0
+    for pid, qrow in queue.items():
+        review = reviews.get(pid)
+        if not review:
+            missing_reviews += 1
+            continue
+        rows.append(build_row(qrow, review))
+
+    rows = assign_room_splits(rows) if rows else []
+    main_rows = assign_room_splits([r for r in rows if is_main(r)]) if rows else []
+    repair_rows = [r for r in rows if not is_main(r)]
+    write_jsonl(args.out_all, rows)
+    write_jsonl(args.out_main, main_rows)
+    write_jsonl(args.out_repair, repair_rows)
+    report = summarize(rows, main_rows, missing_reviews)
+    report.update({
+        "queue": args.queue,
+        "reviews": args.reviews,
+        "out_all": args.out_all,
+        "out_main": args.out_main,
+        "out_repair": args.out_repair,
+    })
+    write_json(args.report, report)
+    write_markdown(args.markdown, report, args)
+    print(json.dumps(report, ensure_ascii=False, indent=2))
+
+
+if __name__ == "__main__":
+    main()
