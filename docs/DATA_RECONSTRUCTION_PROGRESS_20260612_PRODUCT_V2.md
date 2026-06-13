@@ -1244,3 +1244,80 @@ Evaluation gate:
 - Promote it only if AP/AUROC do not regress and Macro-F1/wF1 improve on the
   hardclean fold-0 anchor.  Otherwise keep the reviews as diagnostics and
   refine the repair rules.
+
+## 2026-06-13 Addendum: Pair-Aligned Mechanism Repair Queue
+
+The first mechanism queue exposed a pipeline bug rather than a label-quality
+fact: the dataset and OOF prediction file contain the same 2,093 `pair_id`s,
+and all labels/confidences match when joined by `pair_id`, but 1,889 rows are
+in a different order.  The original queue builder used array position, so its
+`y_current`, `c_current`, and model-failure fields could be attached to the
+wrong product-attribute pair.
+
+Guardrail changes:
+
+- `src/data_quality/build_mechanism_repair_queue_v1.py` now audits both row
+  order and pair-key alignment.  It reports row-order mismatches but reindexes
+  OOF arrays by `pair_id` before scoring rows.
+- `src/data_quality/apply_mechanism_repair_reviews_v1.py` now refuses to apply
+  reviews unless the review/queue IDs, current dataset row index, `y_current`,
+  `c_current`, `attribute_id`, and category metadata are aligned.  A stale queue
+  can only be forced with `--allow_stale_queue`.
+- `audit` mode in the apply script is now strictly non-mutating for `y`, `c`,
+  and textual `confidence`; it only attaches review/decision metadata.
+
+New safe artifacts:
+
+- `data/final/repaired_v1/mechanism_repair_queue_v2_pairaligned_20260613.jsonl`
+  and `.json`
+  - n=400
+  - `by_pair_y_mismatch_count=0`
+  - `by_pair_c_mismatch_count=0`
+  - `by_pair_attribute_id_mismatch_count=0`
+  - `row_order_pair_id_mismatch_count=1889`, recorded as a reindexing warning
+- `data/final/repaired_v1/mechanism_repair_pilot80_v2_pairaligned_20260613.jsonl`
+  and `.json`
+  - n=80
+  - current labels: 67 clean / 13 risk
+  - evidence combos: P 29, O 26, PO 20, OV 2, POV 2, V 1
+  - categories: apparel 14, digital 12, baby 12, beauty 11, shoes/bags 7,
+    food 7, general 7, smart-home 4, sports 3, jewelry 3
+
+Validation checks:
+
+- Rebuilding the old guard test correctly detects the row-order issue.
+- Applying a synthetic fixture against the old pilot is rejected because the
+  stale queue has mismatched `y_current`/`c_current` for reviewed rows.
+- Applying the same style of fixture against the v2 pair-aligned pilot passes
+  the queue consistency gate.
+- The v2 audit-mode apply test keeps 2,093 rows and changes 0 labels,
+  0 confidence weights, and 0 textual confidence fields.
+
+Updated command sequence for the real LLM/VLM review:
+
+```bash
+PYTHONPATH=src python -m data_quality.llm_review_mechanism_repair_queue_v1 \
+  --queue data/final/repaired_v1/mechanism_repair_pilot80_v2_pairaligned_20260613.jsonl \
+  --out data/final/repaired_v1/mechanism_repair_pilot80_v2_llm_review_20260613.jsonl \
+  --report data/final/repaired_v1/mechanism_repair_pilot80_v2_llm_review_20260613.report.json \
+  --model Qwen3-VL-Plus --limit 0 --concurrency 2 --max_images 4
+
+PYTHONPATH=src python -m data_quality.audit_mechanism_repair_reviews_v1 \
+  --queue data/final/repaired_v1/mechanism_repair_pilot80_v2_pairaligned_20260613.jsonl \
+  --review data/final/repaired_v1/mechanism_repair_pilot80_v2_llm_review_20260613.jsonl \
+  --out data/final/repaired_v1/mechanism_repair_pilot80_v2_llm_review_audit_20260613.json \
+  --min_reviews 72 --min_coverage 0.90 --max_issue_rate 0.10 \
+  --require_all_review_ids_in_queue
+
+PYTHONPATH=src python -m data_quality.apply_mechanism_repair_reviews_v1 \
+  --dataset data/final/repaired_v1/dataset_attrpol_hq_product_rawtext_llmcurated_source_recovered_v3_dropunresolved.jsonl \
+  --review data/final/repaired_v1/mechanism_repair_pilot80_v2_llm_review_20260613.jsonl \
+  --queue data/final/repaired_v1/mechanism_repair_pilot80_v2_pairaligned_20260613.jsonl \
+  --mode conservative \
+  --out data/final/repaired_v1/dataset_attrpol_hq_mechanism_repaired_conservative_v2_20260613.jsonl \
+  --report data/final/repaired_v1/mechanism_repaired_conservative_v2_20260613.report.json
+```
+
+Research implication: before spending API calls or GPU time, every repair or
+expansion view must be keyed by stable IDs, not row order.  This also applies
+to future grouped-CV OOF diagnostics and auxiliary-data admission gates.

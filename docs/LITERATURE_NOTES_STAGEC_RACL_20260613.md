@@ -276,3 +276,55 @@ Resulting next step:
   exact-value contradiction/support repair, evidence recovery rerun, or
   consumer-signal review.
 - Then rerun a small fold-0 screen before committing to a full grouped-CV run.
+
+## 2026-06-13 Addendum: Utility-Aware Retrieval and Pair-Keyed QA
+
+Additional sources checked on 2026-06-13:
+
+- LogiCoL: Logically-Informed Contrastive Learning for Set-based Dense
+  Retrieval (EMNLP 2025): https://aclanthology.org/2025.emnlp-main.608/
+- SCARLet / Training a Utility-based Retriever Through Shared Context
+  Attribution for Retrieval-Augmented Language Models (EMNLP 2025):
+  https://aclanthology.org/2025.emnlp-main.33/
+- CoEvo: Coevolution of LLM and Retrieval Model for Domain-Specific
+  Information Retrieval (EMNLP 2025):
+  https://aclanthology.org/2025.emnlp-main.757/
+- External validation tools for LLM-as-a-Judge annotation quality (ACL 2025):
+  https://aclanthology.org/2025.acl-long.779/
+
+Transferable ideas:
+
+- LogiCoL shows that contrastive retrievers can be improved with soft structural
+  constraints over result sets.  For CLAIMARC, the analogous constraints are:
+  same attribute family, compatible/incompatible value relation, source family,
+  and consumer-signal confidence.  This supports a small constrained RACL loss
+  rather than a heavy new architecture.
+- SCARLet argues that retriever supervision should optimize downstream utility,
+  not only semantic relevance.  CLAIMARC's repair reviews can provide exactly
+  such utility labels: `supports`, `contradicts`, `insufficient`, and
+  `not_verifiable` product evidence.  These should become retrieval-positive,
+  retrieval-negative, or ignore masks for contrastive training.
+- CoEvo supports alternating between LLM-generated domain data and retriever
+  updates.  In CLAIMARC, this should remain an offline loop:
+  OOF diagnosis -> pair-aligned LLM/VLM review -> deterministic repair ->
+  retriever/verifier retraining -> new OOF diagnosis.
+- External-validation work reinforces that LLM labels need independent checks.
+  Our implementation response is a three-gate protocol: schema audit, queue
+  alignment audit, and fold-local model/teacher disagreement audit before any
+  row enters training.
+
+Immediate method consequence:
+
+- Treat the pair-aligned mechanism queue as a utility-attribution pilot.  Each
+  reviewed row should produce a structured product-evidence utility state,
+  not a direct final label.
+- The next publishable model tweak should be `RACL-U`: retrieval-augmented
+  contrastive learning with utility masks derived from evidence relation and
+  source confidence.  Keep it minimal:
+  1. positive evidence views: exact/compatible supports for clean rows and
+     contradictions for risk rows;
+  2. masked negatives: same attribute family but incompatible value or
+     insufficient evidence;
+  3. ignore masks for bad claim spans and unverified raw-image-only evidence.
+- The paper can present the agent as an offline utility-labeling and data-QA
+  loop, while the verifier remains a compact end-to-end RACL model.

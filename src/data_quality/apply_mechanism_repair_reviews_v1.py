@@ -44,6 +44,13 @@ def safe_float(value: Any, default: float = 0.0) -> float:
         return default
 
 
+def safe_int(value: Any, default: int = 0) -> int:
+    try:
+        return int(float(value))
+    except Exception:
+        return default
+
+
 def load_reviews(path: str | Path) -> dict[str, dict[str, Any]]:
     out = {}
     for obj in read_jsonl(path):
@@ -61,6 +68,109 @@ def load_queue(path: str | Path) -> dict[str, dict[str, Any]]:
         for row in read_jsonl(path)
         if row.get("pair_id")
     }
+
+
+def validate_queue_dataset_alignment(
+    rows: list[dict[str, Any]],
+    reviews: dict[str, dict[str, Any]],
+    queue: dict[str, dict[str, Any]],
+    *,
+    c_tol: float = 1e-6,
+    sample_limit: int = 20,
+) -> dict[str, Any]:
+    """Ensure review/queue rows still describe the current dataset snapshot."""
+    rows_by_pair: dict[str, dict[str, Any]] = {}
+    duplicate_dataset_pair_ids: list[str] = []
+    for i, row in enumerate(rows):
+        pid = str(row.get("pair_id", "") or "")
+        if not pid:
+            continue
+        if pid in rows_by_pair:
+            duplicate_dataset_pair_ids.append(pid)
+        row_with_index = dict(row)
+        row_with_index["_row_index"] = i
+        rows_by_pair[pid] = row_with_index
+
+    report: dict[str, Any] = {
+        "status": "pass",
+        "n_reviews": len(reviews),
+        "n_queue": len(queue),
+        "review_ids_missing_in_dataset_count": 0,
+        "review_ids_missing_in_queue_count": 0,
+        "queue_row_mismatch_count": 0,
+        "queue_y_mismatch_count": 0,
+        "queue_c_mismatch_count": 0,
+        "queue_attribute_mismatch_count": 0,
+        "queue_category_mismatch_count": 0,
+        "duplicate_dataset_pair_ids": duplicate_dataset_pair_ids[:sample_limit],
+        "samples": {
+            "missing_dataset": [],
+            "missing_queue": [],
+            "row": [],
+            "y": [],
+            "c": [],
+            "attribute_id": [],
+            "category": [],
+        },
+    }
+
+    def add_sample(kind: str, sample: dict[str, Any]) -> None:
+        if len(report["samples"][kind]) < sample_limit:
+            report["samples"][kind].append(sample)
+
+    for pid in sorted(reviews):
+        row = rows_by_pair.get(pid)
+        if not row:
+            report["review_ids_missing_in_dataset_count"] += 1
+            add_sample("missing_dataset", {"pair_id": pid})
+            continue
+        if not queue:
+            continue
+        q = queue.get(pid)
+        if not q:
+            report["review_ids_missing_in_queue_count"] += 1
+            add_sample("missing_queue", {"pair_id": pid})
+            continue
+
+        row_index = row.get("_row_index")
+        q_index = q.get("row")
+        if q_index is not None and str(q_index) != "" and safe_int(q_index, -1) != int(row_index):
+            report["queue_row_mismatch_count"] += 1
+            add_sample("row", {"pair_id": pid, "dataset_row": row_index, "queue_row": q_index})
+
+        row_y = safe_int(row.get("y", 0))
+        q_y = safe_int(q.get("y_current", row_y))
+        if row_y != q_y:
+            report["queue_y_mismatch_count"] += 1
+            add_sample("y", {"pair_id": pid, "dataset": row_y, "queue": q_y})
+
+        row_c = safe_float(row.get("c", 0.0))
+        q_c = safe_float(q.get("c_current", row_c))
+        if abs(row_c - q_c) > c_tol:
+            report["queue_c_mismatch_count"] += 1
+            add_sample("c", {"pair_id": pid, "dataset": round(row_c, 6), "queue": round(q_c, 6)})
+
+        for field, count_key, sample_key in (
+            ("attribute_id", "queue_attribute_mismatch_count", "attribute_id"),
+            ("category", "queue_category_mismatch_count", "category"),
+        ):
+            row_v = str(row.get(field, "") or "")
+            q_v = str(q.get(field, "") or "")
+            if q_v and row_v != q_v:
+                report[count_key] += 1
+                add_sample(sample_key, {"pair_id": pid, "dataset": row_v, "queue": q_v})
+
+    fatal_keys = (
+        "review_ids_missing_in_dataset_count",
+        "review_ids_missing_in_queue_count",
+        "queue_row_mismatch_count",
+        "queue_y_mismatch_count",
+        "queue_c_mismatch_count",
+        "queue_attribute_mismatch_count",
+    )
+    if duplicate_dataset_pair_ids or any(report[k] for k in fatal_keys):
+        report["status"] = "fail"
+    return report
 
 
 def is_reliable(review: dict[str, Any]) -> bool:
@@ -100,36 +210,49 @@ def decide_action(
     drop = False
     reasons: list[str] = []
 
-    if not reliable:
-        reasons.append("review_low_confidence")
-        if rel in UNCERTAIN_REL and c_before <= max_uncertain_drop_c and mode != "audit":
-            c_after = min(c_before, 0.05)
-            action = "downweight_uncertain_low_conf"
-            reasons.append("uncertain_relation_low_weight")
+    def finish(action: str, drop: bool, y_after: int, c_after: float,
+               reasons: list[str]) -> dict[str, Any]:
+        if mode == "audit":
+            return {
+                "action": "audit_only",
+                "would_action": action,
+                "drop": False,
+                "would_drop": bool(drop),
+                "y_before": y_before,
+                "y_after": y_before,
+                "would_y_after": int(y_after),
+                "c_before": round(c_before, 4),
+                "c_after": round(c_before, 4),
+                "would_c_after": round(c_after, 4),
+                "reasons": reasons + ["audit_mode_no_mutation"],
+            }
         return {
             "action": action,
-            "drop": drop,
+            "would_action": action,
+            "drop": bool(drop),
+            "would_drop": bool(drop),
             "y_before": y_before,
-            "y_after": y_after,
+            "y_after": int(y_after),
+            "would_y_after": int(y_after),
             "c_before": round(c_before, 4),
             "c_after": round(c_after, 4),
+            "would_c_after": round(c_after, 4),
             "reasons": reasons,
         }
 
+    if not reliable:
+        reasons.append("review_low_confidence")
+        if rel in UNCERTAIN_REL and c_before <= max_uncertain_drop_c:
+            c_after = min(c_before, 0.05)
+            action = "downweight_uncertain_low_conf"
+            reasons.append("uncertain_relation_low_weight")
+        return finish(action, drop, y_after, c_after, reasons)
+
     if q in BAD_CLAIM or str(review.get("repair_action", "")) == "drop_bad_claim":
         reasons.append("bad_claim_span")
-        if mode != "audit":
-            drop = True
-            action = "drop_bad_claim"
-        return {
-            "action": action,
-            "drop": drop,
-            "y_before": y_before,
-            "y_after": y_after,
-            "c_before": round(c_before, 4),
-            "c_after": round(c_after, 4),
-            "reasons": reasons,
-        }
+        drop = True
+        action = "drop_bad_claim"
+        return finish(action, drop, y_after, c_after, reasons)
 
     if rel == "supports" and val in SUPPORT_VALUES:
         reasons.append("product_evidence_supports_claim")
@@ -144,16 +267,8 @@ def decide_action(
                 reasons.append("strong_current_positive_requires_consumer_review")
         else:
             c_after = max(c_before, min_repaired_c)
-            action = "strengthen_clean_supported" if mode != "audit" else "keep_flag_only"
-        return {
-            "action": action,
-            "drop": drop,
-            "y_before": y_before,
-            "y_after": y_after,
-            "c_before": round(c_before, 4),
-            "c_after": round(c_after, 4),
-            "reasons": reasons,
-        }
+            action = "strengthen_clean_supported"
+        return finish(action, drop, y_after, c_after, reasons)
 
     if rel == "contradicts" and val in CONTRADICT_VALUES:
         reasons.append("product_evidence_contradicts_claim")
@@ -168,45 +283,21 @@ def decide_action(
                 reasons.append("strong_current_clean_requires_consumer_review")
         else:
             c_after = max(c_before, min_repaired_c)
-            action = "strengthen_risk_contradicted" if mode != "audit" else "keep_flag_only"
-        return {
-            "action": action,
-            "drop": drop,
-            "y_before": y_before,
-            "y_after": y_after,
-            "c_before": round(c_before, 4),
-            "c_after": round(c_after, 4),
-            "reasons": reasons,
-        }
+            action = "strengthen_risk_contradicted"
+        return finish(action, drop, y_after, c_after, reasons)
 
     if rel in UNCERTAIN_REL:
         reasons.append("insufficient_or_not_verifiable")
-        if mode != "audit" and c_before <= max_uncertain_drop_c:
+        if c_before <= max_uncertain_drop_c:
             drop = True
             action = "drop_uncertain_weak_row"
-        elif mode != "audit":
+        else:
             c_after = min(c_before, max(0.05, c_before * 0.5))
             action = "downweight_uncertain_row"
-        return {
-            "action": action,
-            "drop": drop,
-            "y_before": y_before,
-            "y_after": y_after,
-            "c_before": round(c_before, 4),
-            "c_after": round(c_after, 4),
-            "reasons": reasons,
-        }
+        return finish(action, drop, y_after, c_after, reasons)
 
     reasons.append("unhandled_review_state")
-    return {
-        "action": action,
-        "drop": drop,
-        "y_before": y_before,
-        "y_after": y_after,
-        "c_before": round(c_before, 4),
-        "c_after": round(c_after, 4),
-        "reasons": reasons,
-    }
+    return finish(action, drop, y_after, c_after, reasons)
 
 
 def attach_review_metadata(
@@ -243,7 +334,10 @@ def attach_review_metadata(
     out["_mechanism_repair_decision"] = decision
     out["y"] = int(decision["y_after"])
     out["c"] = float(decision["c_after"])
-    out["confidence"] = confidence_from_c(float(decision["c_after"]))
+    if decision.get("action") == "audit_only":
+        out["confidence"] = row.get("confidence", "")
+    else:
+        out["confidence"] = confidence_from_c(float(decision["c_after"]))
     return out
 
 
@@ -257,7 +351,7 @@ def confidence_from_c(c: float) -> str:
     return "high"
 
 
-def summarize(rows_out, drops, touched, mode, args) -> dict[str, Any]:
+def summarize(rows_out, drops, touched, mode, args, queue_alignment) -> dict[str, Any]:
     action_counts = Counter()
     rel_counts = Counter()
     label_changes = Counter()
@@ -286,6 +380,7 @@ def summarize(rows_out, drops, touched, mode, args) -> dict[str, Any]:
         "max_safe_relabel_c": args.max_safe_relabel_c,
         "max_uncertain_drop_c": args.max_uncertain_drop_c,
         "min_repaired_c": args.min_repaired_c,
+        "queue_alignment": queue_alignment,
         "action_counts": dict(action_counts.most_common()),
         "relation_counts": dict(rel_counts.most_common()),
         "label_changes": dict(label_changes.most_common()),
@@ -306,6 +401,8 @@ def main() -> None:
     ap.add_argument("--max_safe_relabel_c", type=float, default=0.35)
     ap.add_argument("--max_uncertain_drop_c", type=float, default=0.15)
     ap.add_argument("--min_repaired_c", type=float, default=0.50)
+    ap.add_argument("--allow_stale_queue", action="store_true",
+                    help="Apply reviews even when queue metadata no longer matches the dataset.")
     ap.add_argument("--out", required=True)
     ap.add_argument("--report", required=True)
     args = ap.parse_args()
@@ -315,6 +412,27 @@ def main() -> None:
     queue = load_queue(args.queue) if args.queue else {}
     args._input_n = len(rows)
     args._review_n = len(reviews)
+    queue_alignment = validate_queue_dataset_alignment(rows, reviews, queue)
+    if queue_alignment["status"] != "pass" and not args.allow_stale_queue:
+        report = {
+            "status": "fail",
+            "fail_reasons": ["review_queue_dataset_alignment_mismatch"],
+            "mode": args.mode,
+            "dataset": args.dataset,
+            "review": args.review,
+            "queue": args.queue,
+            "out": args.out,
+            "input_rows": len(rows),
+            "review_rows_loaded": len(reviews),
+            "queue_alignment": queue_alignment,
+        }
+        Path(args.report).parent.mkdir(parents=True, exist_ok=True)
+        Path(args.report).write_text(
+            json.dumps(report, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+        print(json.dumps(report, ensure_ascii=False, indent=2))
+        raise SystemExit(2)
 
     out_rows: list[dict[str, Any]] = []
     touched_rows: list[dict[str, Any]] = []
@@ -350,7 +468,7 @@ def main() -> None:
         out_rows.append(repaired)
 
     write_jsonl(args.out, out_rows)
-    report = summarize(out_rows, drops, touched_rows, args.mode, args)
+    report = summarize(out_rows, drops, touched_rows, args.mode, args, queue_alignment)
     Path(args.report).parent.mkdir(parents=True, exist_ok=True)
     Path(args.report).write_text(
         json.dumps(report, ensure_ascii=False, indent=2),

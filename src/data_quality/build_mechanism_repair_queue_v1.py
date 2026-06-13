@@ -48,6 +48,198 @@ def read_jsonl(path: Path) -> list[dict[str, Any]]:
     return [json.loads(line) for line in open(path) if line.strip()]
 
 
+def normalize_scalar(value: Any) -> str:
+    if isinstance(value, bytes):
+        value = value.decode("utf-8", errors="ignore")
+    if isinstance(value, np.generic):
+        value = value.item()
+    if value is None:
+        return ""
+    return str(value)
+
+
+def safe_float(value: Any, default: float = 0.0) -> float:
+    try:
+        if isinstance(value, np.generic):
+            value = value.item()
+        return float(value)
+    except Exception:
+        return default
+
+
+def safe_int(value: Any, default: int = 0) -> int:
+    try:
+        if isinstance(value, np.generic):
+            value = value.item()
+        return int(float(value))
+    except Exception:
+        return default
+
+
+def compare_dataset_oof_alignment(
+    records: list[dict[str, Any]],
+    oof: dict[str, Any],
+    *,
+    c_tol: float = 1e-6,
+    sample_limit: int = 20,
+) -> dict[str, Any]:
+    """Check that saved OOF predictions still belong to this dataset view."""
+    n_dataset = len(records)
+    y_oof = np.asarray(oof["y"], int) if "y" in oof else np.asarray([], int)
+    c_oof = np.asarray(oof["c"], float) if "c" in oof else np.asarray([], float)
+    n_oof = int(len(y_oof)) if len(y_oof) else int(len(next(iter(oof.values()))))
+    n = min(n_dataset, n_oof)
+    dataset_ids = [normalize_scalar(row.get("pair_id")) for row in records]
+    oof_ids = [normalize_scalar(v) for v in oof["pair_id"]] if "pair_id" in oof else []
+    dataset_seen: dict[str, int] = {}
+    oof_seen: dict[str, int] = {}
+    duplicate_dataset_ids: list[str] = []
+    duplicate_oof_ids: list[str] = []
+    for i, pid in enumerate(dataset_ids):
+        if not pid:
+            continue
+        if pid in dataset_seen:
+            duplicate_dataset_ids.append(pid)
+        dataset_seen[pid] = i
+    for i, pid in enumerate(oof_ids):
+        if not pid:
+            continue
+        if pid in oof_seen:
+            duplicate_oof_ids.append(pid)
+        oof_seen[pid] = i
+
+    report: dict[str, Any] = {
+        "n_dataset": n_dataset,
+        "n_oof": n_oof,
+        "length_match": n_dataset == n_oof,
+        "missing_oof_keys": sorted(k for k in ("pair_id", "attribute_id", "y", "c") if k not in oof),
+        "duplicate_dataset_pair_ids": duplicate_dataset_ids[:sample_limit],
+        "duplicate_oof_pair_ids": duplicate_oof_ids[:sample_limit],
+        "dataset_pair_ids_missing_in_oof_count": 0,
+        "oof_pair_ids_missing_in_dataset_count": 0,
+        "row_order_pair_id_mismatch_count": 0,
+        "row_order_attribute_id_mismatch_count": 0,
+        "row_order_category_mismatch_count": 0,
+        "by_pair_attribute_id_mismatch_count": 0,
+        "by_pair_y_mismatch_count": 0,
+        "by_pair_c_mismatch_count": 0,
+        "by_pair_category_mismatch_count": 0,
+        "requires_pair_id_reindexing": False,
+        "samples": {
+            "row_order_pair_id": [],
+            "row_order_attribute_id": [],
+            "row_order_category": [],
+            "dataset_missing_in_oof": [],
+            "oof_missing_in_dataset": [],
+            "by_pair_attribute_id": [],
+            "by_pair_y": [],
+            "by_pair_c": [],
+            "by_pair_category": [],
+        },
+    }
+
+    def add_sample(kind: str, sample: dict[str, Any]) -> None:
+        if len(report["samples"][kind]) < sample_limit:
+            report["samples"][kind].append(sample)
+
+    for i in range(n):
+        row = records[i]
+        if "pair_id" in oof:
+            row_v = normalize_scalar(row.get("pair_id"))
+            oof_v = normalize_scalar(oof["pair_id"][i])
+            if row_v != oof_v:
+                report["row_order_pair_id_mismatch_count"] += 1
+                report["requires_pair_id_reindexing"] = True
+                add_sample("row_order_pair_id", {"row": i, "dataset": row_v, "oof": oof_v})
+        if "attribute_id" in oof:
+            row_v = normalize_scalar(row.get("attribute_id"))
+            oof_v = normalize_scalar(oof["attribute_id"][i])
+            if row_v != oof_v:
+                report["row_order_attribute_id_mismatch_count"] += 1
+                add_sample("row_order_attribute_id", {"row": i, "dataset": row_v, "oof": oof_v})
+        if "category" in oof:
+            row_v = normalize_scalar(row.get("category"))
+            oof_v = normalize_scalar(oof["category"][i])
+            if row_v != oof_v:
+                report["row_order_category_mismatch_count"] += 1
+                add_sample("row_order_category", {"row": i, "pair_id": row.get("pair_id"), "dataset": row_v, "oof": oof_v})
+
+    if "pair_id" in oof:
+        dataset_missing = sorted(set(dataset_seen) - set(oof_seen))
+        oof_missing = sorted(set(oof_seen) - set(dataset_seen))
+        report["dataset_pair_ids_missing_in_oof_count"] = len(dataset_missing)
+        report["oof_pair_ids_missing_in_dataset_count"] = len(oof_missing)
+        for pid in dataset_missing[:sample_limit]:
+            add_sample("dataset_missing_in_oof", {"pair_id": pid})
+        for pid in oof_missing[:sample_limit]:
+            add_sample("oof_missing_in_dataset", {"pair_id": pid})
+
+        if not duplicate_dataset_ids and not duplicate_oof_ids:
+            for row in records:
+                pid = normalize_scalar(row.get("pair_id"))
+                if not pid or pid not in oof_seen:
+                    continue
+                j = oof_seen[pid]
+                if "attribute_id" in oof:
+                    row_v = normalize_scalar(row.get("attribute_id"))
+                    oof_v = normalize_scalar(oof["attribute_id"][j])
+                    if row_v != oof_v:
+                        report["by_pair_attribute_id_mismatch_count"] += 1
+                        add_sample("by_pair_attribute_id", {"pair_id": pid, "dataset": row_v, "oof": oof_v})
+                if "category" in oof:
+                    row_v = normalize_scalar(row.get("category"))
+                    oof_v = normalize_scalar(oof["category"][j])
+                    if row_v != oof_v:
+                        report["by_pair_category_mismatch_count"] += 1
+                        add_sample("by_pair_category", {"pair_id": pid, "dataset": row_v, "oof": oof_v})
+                if "y" in oof:
+                    row_y = safe_int(row.get("y", 0))
+                    oof_y = safe_int(y_oof[j])
+                    if row_y != oof_y:
+                        report["by_pair_y_mismatch_count"] += 1
+                        add_sample("by_pair_y", {"pair_id": pid, "dataset": row_y, "oof": oof_y})
+                if "c" in oof:
+                    row_c = safe_float(row.get("c", 0.0))
+                    oof_c = safe_float(c_oof[j])
+                    if abs(row_c - oof_c) > c_tol:
+                        report["by_pair_c_mismatch_count"] += 1
+                        add_sample("by_pair_c", {"pair_id": pid, "dataset": round(row_c, 6), "oof": round(oof_c, 6)})
+
+    fatal_counts = (
+        report["dataset_pair_ids_missing_in_oof_count"],
+        report["oof_pair_ids_missing_in_dataset_count"],
+        report["by_pair_attribute_id_mismatch_count"],
+        report["by_pair_y_mismatch_count"],
+        report["by_pair_c_mismatch_count"],
+    )
+    report["status"] = "pass" if (
+        report["length_match"]
+        and not any(fatal_counts)
+        and not report["missing_oof_keys"]
+        and not duplicate_dataset_ids
+        and not duplicate_oof_ids
+    ) else "fail"
+    return report
+
+
+def oof_order_for_records(records: list[dict[str, Any]], oof: dict[str, Any]) -> np.ndarray:
+    if "pair_id" not in oof:
+        return np.arange(len(records), dtype=int)
+    index: dict[str, int] = {}
+    for i, pid in enumerate(oof["pair_id"]):
+        key = normalize_scalar(pid)
+        if key in index:
+            raise ValueError(f"duplicate pair_id in OOF file: {key}")
+        index[key] = i
+    order = []
+    for row in records:
+        key = normalize_scalar(row.get("pair_id"))
+        if key not in index:
+            raise ValueError(f"dataset pair_id missing from OOF file: {key}")
+        order.append(index[key])
+    return np.asarray(order, dtype=int)
+
+
 def evidence_text(record: dict[str, Any], max_len: int = 1200) -> dict[str, str]:
     def join_items(key: str, field: str) -> str:
         vals = [
@@ -194,6 +386,8 @@ def main() -> None:
     ap.add_argument("--min_priority", type=int, default=5)
     ap.add_argument("--limit", type=int, default=400)
     ap.add_argument("--raw_image_root", default="data/raw/product_images")
+    ap.add_argument("--allow_oof_mismatch", action="store_true",
+                    help="Continue even if the OOF file no longer aligns with the dataset.")
     ap.add_argument("--out", required=True)
     ap.add_argument("--stats_out", required=True)
     args = ap.parse_args()
@@ -201,12 +395,35 @@ def main() -> None:
     records = read_jsonl(Path(args.dataset))
     raw_image_root = Path(args.raw_image_root)
     oof = load_oof(Path(args.oof))
-    y = np.asarray(oof["y"], int)
-    c = np.asarray(oof.get("c", np.ones_like(y)), float)
-    if len(records) != len(y):
-        raise ValueError(f"dataset/oof length mismatch: {len(records)} vs {len(y)}")
-    p_m, yhat_m = get_method(oof, args.method)
-    p_b, yhat_b = get_method(oof, args.baseline)
+    y_raw = np.asarray(oof["y"], int)
+    c_raw = np.asarray(oof.get("c", np.ones_like(y_raw)), float)
+    if len(records) != len(y_raw):
+        raise ValueError(f"dataset/oof length mismatch: {len(records)} vs {len(y_raw)}")
+    alignment = compare_dataset_oof_alignment(records, oof)
+    if alignment["status"] != "pass" and not args.allow_oof_mismatch:
+        failed_stats = {
+            "status": "fail",
+            "fail_reasons": ["dataset_oof_alignment_mismatch"],
+            "dataset": args.dataset,
+            "oof": args.oof,
+            "method": args.method,
+            "baseline": args.baseline,
+            "alignment": alignment,
+        }
+        Path(args.stats_out).parent.mkdir(parents=True, exist_ok=True)
+        Path(args.stats_out).write_text(
+            json.dumps(failed_stats, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+        print(json.dumps(failed_stats, ensure_ascii=False, indent=2), flush=True)
+        raise SystemExit(2)
+    order = oof_order_for_records(records, oof)
+    y = y_raw[order]
+    c = c_raw[order]
+    p_m_raw, yhat_m_raw = get_method(oof, args.method)
+    p_b_raw, yhat_b_raw = get_method(oof, args.baseline)
+    p_m, yhat_m = p_m_raw[order], yhat_m_raw[order]
+    p_b, yhat_b = p_b_raw[order], yhat_b_raw[order]
 
     items = []
     for i, record in enumerate(records):
@@ -241,6 +458,7 @@ def main() -> None:
         "limit": args.limit,
         "raw_image_root": args.raw_image_root,
         "n_queue": len(items),
+        "alignment": alignment,
         "by_reason": {},
         "by_category": {},
         "by_combo": {},
