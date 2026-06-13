@@ -130,6 +130,14 @@ Active:
   `hybrid_valblend` reaches Macro-F1 0.9156 but loses AP, while
   `hybrid_rankavg` reaches AP 0.8971 but loses Macro-F1.  The next step is
   multi-objective, evidence-conditioned calibration.
+- RACL-U+C fold-safe OOF calibration is the new top-line candidate.  On the
+  same softdropbad full400 v3 OOF, it reaches AP 0.8953 / AUROC 0.9678 /
+  Macro-F1 0.9209 / wF1 0.8491.  Against BGE-LR, AUROC, Macro-F1, and wF1 are
+  significant by paired bootstrap; AP is positive but not significant.
+- The score-only calibration ablation reaches Macro-F1 0.9230, while the
+  source-conditioned ablation reaches AP 0.9091 and wF1 0.8576.  This supports
+  a compact "utility-masked RACL + evidence-conditioned calibration" method
+  rather than a larger encoder stack.
 - `src/models/diagnose_oof_thresholds.py` formalizes saved-vs-oracle OOF
   threshold analysis.  On the RACL-U fold-0 OOF, CLAIMARC's oracle Macro-F1 gap
   is only +0.0027, so the remaining deficit is subgroup/source reliability
@@ -213,16 +221,29 @@ Current full-CV finding:
   digital/electronics, and mixed evidence combinations, while losing in general
   and jewelry categories.  The next repair queue should focus on those two
   categories plus high-weight rows where BGE is correct and CLAIMARC is wrong.
+- RACL-U+C fixes the main full-CV bottleneck without changing the base encoder:
+  it combines the RACL decision geometry with BGE's ranking signal and
+  source/confidence reliability.  This makes calibration a method contribution,
+  not a post-hoc reporting trick.
+
+Current residual data finding:
+
+- A 300-row RACL-U residual repair queue has been built from full-CV OOF
+  predictions.  It is pair-aligned with the current dataset; 221 rows reuse the
+  full400 blinded review and 79 rows require new review.
+- The new uncovered rows are dominated by exact value/material hints, P/O/PO
+  evidence combinations, BGE-correct/CLAIMARC-wrong errors, and CLAIMARC
+  high-confidence false positives.  This is exactly the boundary that motivates
+  source-conditioned calibration and exact-value negative repair.
 
 ## Immediate Queue
 
-1. Implement a small `RACL-U+C` calibration diagnostic that uses fold-local
-   validation to combine CLAIMARC and BGE with evidence/category/confidence
-   features under a multi-objective score: Macro-F1 + wF1 + AP constraint.
-2. Mine the full-CV OOF for high-impact residual rows:
-   BGE-correct / CLAIMARC-wrong in `general`, `jewelry_and_collectibles`, and
-   high-confidence weighted slices.  Send these rows to the next pair-aligned
-   LLM/VLM review batch.
+1. Finish the 79-row residual blinded review and apply a conservative residual
+   repair candidate.  Compare it against the current softdropbad full400 v3
+   using the same RACL-U+C OOF protocol.
+2. Promote source-conditioned RACL-U+C into a formal method variant and rerun
+   confirmation diagnostics with fixed pre-registered hyperparameters:
+   score-only, source-conditioned, and selected source/full.
 3. Add a narrow robustness ablation around the mask threshold:
    `(cl_c_min, cl_neg_c_min) in {(0.1,0.1), (0.2,0.2), (0.3,0.3)}` only after
    the calibration diagnostic identifies whether AP or F1 is the binding

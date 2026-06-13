@@ -1579,3 +1579,77 @@ The hybrid result suggests that CLAIMARC and BGE are complementary, but naive
 single-objective blending trades AP against Macro-F1.  The next architecture
 iteration should be a small multi-objective evidence-conditioned calibration
 head, not a larger encoder stack.
+
+## 2026-06-13 Addendum: RACL-U+C Fold-Safe OOF Calibration
+
+A compact RACL-U+C diagnostic was added in
+`src/models/cv_oof_raclu_calibrate.py`.  It treats CLAIMARC/RACL-U and BGE-LR
+as frozen scorers, then learns a small calibration layer on out-of-fold
+predictions from all other folds before applying it to the held-out fold.  This
+keeps the protocol fold-safe while testing whether evidence/source reliability
+can turn CLAIMARC-BGE complementarity into a stronger deployable verifier.
+
+Main artifact:
+
+- `data/final/cleancl/remote_results_20260613/cv_oof_raclu_c_softdropbad_full400_v3_full_clc02_20260613.json`
+
+Full OOF results:
+
+| method | AP | AUROC | Macro-F1 | wF1 | n |
+|---|---:|---:|---:|---:|---:|
+| CLAIMARC selectiveRKC + RACL-U | 0.8819 | 0.9490 | 0.9076 | 0.8221 | 1,956 |
+| BGE-LR | 0.8914 | 0.9606 | 0.9006 | 0.8143 | 1,956 |
+| RACL-U+C | 0.8953 | 0.9678 | 0.9209 | 0.8491 | 1,956 |
+
+Paired bootstrap against BGE-LR:
+
+- `dAP=+0.0045`, 95% CI `[-0.0174, 0.0266]`
+- `dAUROC=+0.0071`, 95% CI `[0.0014, 0.0127]`
+- `dMacroF1=+0.0204`, 95% CI `[0.0089, 0.0319]`
+- `dWF1=+0.0350`, 95% CI `[0.0052, 0.0653]`
+
+Ablations:
+
+| calibration feature set | AP | AUROC | Macro-F1 | wF1 | interpretation |
+|---|---:|---:|---:|---:|---|
+| score only | 0.8883 | 0.9667 | 0.9230 | 0.8482 | model-score complementarity alone is strong |
+| source only | 0.9091 | 0.9674 | 0.9180 | 0.8576 | source/category/confidence features improve AP and confidence-weighted F1 |
+| nested selected score/source/full | 0.8953 | 0.9678 | 0.9209 | 0.8491 | conservative default; significant on AUROC/Macro-F1/wF1 |
+
+Interpretation:
+
+- This is the first full-CV result that clearly exceeds BGE-LR on ranking
+  AUROC and deployed classification metrics under a fold-safe protocol.
+- AP is now positive against BGE-LR but not yet significant.  The source-only
+  ablation reaches AP 0.9091 and is significant against CLAIMARC, so the next
+  confirmation run should check whether source-conditioned calibration remains
+  stable after residual data repair.
+- Architecturally this supports the paper's central claim: retrieval-augmented
+  contrastive learning should be paired with a small evidence-conditioned
+  calibration layer rather than a larger encoder or LLM-at-inference module.
+
+## 2026-06-13 Addendum: RACL-U Residual Data Queue
+
+The full-CV OOF predictions were mined for residual high-impact rows after
+RACL-U+C diagnosis.
+
+Queue artifact:
+
+- `data/final/repaired_v1/mechanism_repair_queue_softdropbad_full400_v3_raclu_residual_20260613.jsonl`
+
+Queue summary:
+
+- 300 unique residual rows.
+- 221/300 already overlap the completed full400 blinded review; 79 rows require
+  new review.
+- dominant reasons: exact value/material hints (275), source combo P/O/PO
+  (107/99/91), CLAIMARC high-confidence false positives (86), both-wrong
+  high-confidence negatives (79), BGE-correct/CLAIMARC-wrong rows (38).
+- the 79 newly uncovered rows are concentrated in shoes/bags (21), general
+  (14), apparel/underwear (12), digital/electronics (10), baby/kids/pets (8),
+  and beauty/personal care (8).
+
+The residual queue is valuable because it focuses on the remaining boundary:
+exact parameter/value-compatible evidence where CLAIMARC can still overfire,
+and high-confidence negatives where both models may be missing a contradiction
+or consumer-expectation gap.

@@ -380,3 +380,22 @@ Empirical update:
 - This is a compact publishable bridge between SCARLet-style utility retrieval
   and CalibRAG-style calibration: the offline LLM/VLM agent supplies utility
   attribution, while the submitted verifier remains a deterministic RACL model.
+
+Follow-up empirical confirmation:
+
+- `src/models/cv_oof_raclu_calibrate.py` implements the compact RACL-U+C
+  diagnostic suggested above.  It is fold-safe stacked calibration: the
+  calibrator is fitted on OOF predictions from all other folds and applied to
+  the held-out fold.
+- On `softdropbad full400 v3`, RACL-U+C reaches AP 0.8953 / AUROC 0.9678 /
+  Macro-F1 0.9209 / wF1 0.8491, outperforming both CLAIMARC selectiveRKC
+  (0.8819 / 0.9490 / 0.9076 / 0.8221) and BGE-LR
+  (0.8914 / 0.9606 / 0.9006 / 0.8143).
+- Against BGE-LR, paired bootstrap gives significant gains on AUROC
+  (`+0.0071`, 95% CI `[0.0014, 0.0127]`), Macro-F1 (`+0.0204`,
+  `[0.0089, 0.0319]`), and wF1 (`+0.0350`, `[0.0052, 0.0653]`).  AP is
+  positive but not significant.
+- The ablation is methodologically useful: score-only calibration proves
+  CLAIMARC/BGE complementarity (Macro-F1 0.9230), while source-conditioned
+  calibration improves AP to 0.9091 and wF1 to 0.8576.  This is exactly the
+  reliability-calibration mechanism predicted by the literature scan.
