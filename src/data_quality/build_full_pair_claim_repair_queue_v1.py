@@ -39,6 +39,21 @@ def read_by_pair(path: str | Path) -> dict[str, dict[str, Any]]:
     return out
 
 
+def read_pair_ids(paths: list[str]) -> set[str]:
+    out: set[str] = set()
+    for path in paths:
+        if not path:
+            continue
+        p = Path(path)
+        if not p.exists():
+            continue
+        for row in read_jsonl(p):
+            pid = pair_id(row)
+            if pid:
+                out.add(pid)
+    return out
+
+
 CLAIM_TRIGGER_TERMS = (
     "主播", "直播", "直播间", "宣传", "说", "说的", "说是", "承诺", "介绍",
     "标注", "写着", "写的", "页面", "详情", "虚标", "不符", "不一致",
@@ -195,6 +210,8 @@ def write_markdown(path: str | Path, report: dict[str, Any]) -> None:
         "review_rows",
         "selected_rows",
         "limit",
+        "excluded_pair_ids",
+        "excluded_rows",
         "missing_queue_rows",
         "prefilter_state",
         "source_review_action",
@@ -240,14 +257,22 @@ def main() -> None:
     ap.add_argument("--priorities", default="", help="Optional comma/space list such as P0,P1")
     ap.add_argument("--claim_states", default="claim_missing,claim_present_review_needed")
     ap.add_argument("--prefilter_states", default="strong_srt_candidate,weak_srt_candidate,very_weak_srt_candidate,no_srt_candidate")
+    ap.add_argument(
+        "--exclude",
+        nargs="*",
+        default=[],
+        help="JSONL files whose pair_ids should be skipped, e.g. prior claim repair queues or review outputs.",
+    )
     args = ap.parse_args()
 
     priorities = {p.strip() for p in args.priorities.replace(",", " ").split() if p.strip()}
     claim_states = {p.strip() for p in args.claim_states.replace(",", " ").split() if p.strip()}
     prefilter_states = {p.strip() for p in args.prefilter_states.replace(",", " ").split() if p.strip()}
     pref_by_pair = read_by_pair(args.srt_prefilter) if args.srt_prefilter else {}
+    excluded_pair_ids = read_pair_ids(args.exclude)
     selected: list[dict[str, Any]] = []
     missing_queue_rows = 0
+    excluded_rows = 0
     review_rows = 0
 
     reviews_path = Path(args.reviews) if args.reviews else Path("")
@@ -256,6 +281,9 @@ def main() -> None:
         for rank, review in enumerate(read_jsonl(args.reviews), 1):
             review_rows += 1
             pid = pair_id(review)
+            if pid in excluded_pair_ids:
+                excluded_rows += 1
+                continue
             queue_row = queue_by_pair.get(pid)
             if not queue_row:
                 missing_queue_rows += 1
@@ -271,6 +299,9 @@ def main() -> None:
     else:
         for rank, queue_row in enumerate(read_jsonl(args.queue), 1):
             pid = pair_id(queue_row)
+            if pid in excluded_pair_ids:
+                excluded_rows += 1
+                continue
             if pref_by_pair and not queue_row.get("srt_prefilter"):
                 queue_row = dict(queue_row)
                 queue_row["srt_prefilter"] = pref_by_pair.get(pid, {})
@@ -302,6 +333,8 @@ def main() -> None:
         "priorities": sorted(priorities),
         "claim_states_filter": sorted(claim_states),
         "prefilter_states_filter": sorted(prefilter_states),
+        "excluded_pair_ids": len(excluded_pair_ids),
+        "excluded_rows": excluded_rows,
         "missing_queue_rows": missing_queue_rows,
         "prefilter_state": dict(Counter(clean((r.get("_claim_repair") or {}).get("srt_prefilter_state")) for r in selected)),
         "source_review_action": dict(Counter(clean((r.get("_claim_repair") or {}).get("source_review_action")) for r in selected)),
