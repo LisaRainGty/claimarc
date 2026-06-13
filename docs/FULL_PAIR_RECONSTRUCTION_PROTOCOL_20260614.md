@@ -28,6 +28,9 @@ Full reconstruction queue:
 
 - `data/final/repaired_v1/full_pair_reconstruction_queue_v1_20260614.jsonl`
 - `data/final/repaired_v1/full_pair_reconstruction_queue_v1_20260614.report.json`
+- queue audit:
+  `docs/FULL_PAIR_RECONSTRUCTION_QUEUE_AUDIT_20260614.md`
+  and `data/final/repaired_v1/full_pair_reconstruction_queue_audit_v1_20260614.json`
 
 Summary:
 
@@ -91,6 +94,26 @@ Priority:
 
 The priority score is only a scheduling device.  It does not make any row easier
 or cleaner for training, and it does not delete hard samples.
+
+## Pre-LLM Queue Audit
+
+Audit builder:
+
+- `src/data_quality/audit_full_pair_reconstruction_queue_v1.py`
+
+Additional diagnostics:
+
+| signal | count |
+|---|---:|
+| compact comment mentions typed as attribute | 49,554 |
+| compact comment mentions typed as service | 778 |
+| rows with service comments in compact mentions | 395 |
+| commercial-promise attributes | 531 |
+| rows whose compact comments mention streamer/live/promotion cues | 927 |
+
+This audit supports the reset: many rows are not clean negatives; they are
+measurement states where consumer comments may explicitly refer to the streamer
+claim, but upstream claim/evidence extraction failed or drifted.
 
 ## Rebuild Rules
 
