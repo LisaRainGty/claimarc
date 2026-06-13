@@ -43,6 +43,33 @@ Lightweight learnability on the corrected complete candidates:
 | complete claim/evidence main | 0.6367 | 0.8540 | 0.7578 | realistic current benchmark |
 | complete after claim review | 0.6834 | 0.8663 | 0.7710 | diagnostic until reviewed |
 
+Initial GPU sanity check on the corrected complete main candidate, fold 0
+only, single CLAIMARC seed:
+
+| setting | AP | AUROC | Macro-F1 | wF1 | interpretation |
+|---|---:|---:|---:|---:|---|
+| CLAIMARC default RACL | 0.6265 | 0.8052 | 0.7192 | 0.6324 | below BGE; realistic difficulty |
+| CLAIMARC masked RACL `c>=0.15` | 0.6517 | 0.8139 | 0.6804 | 0.5651 | ranking slightly up, threshold/F1 down |
+| BGE-LR | 0.6742 | 0.8473 | 0.7847 | 0.7208 | current strongest fold-0 baseline |
+
+P0 LLM/VLM completion pilot on the prompt-ready queue:
+
+- top-50 P0 rows verified with `Qwen3-VL-Plus`, max 4 detail images.
+- curation actions: `keep_clean=2`, `keep_risk=2`, `rerun_more_evidence=43`,
+  `drop=3`.
+- relation states: `claim_only=24`, `evidence_only=15`, `supports_claim=4`,
+  `contradicts_claim=2`, `insufficient=5`.
+- Interpretation: the queue is useful but most rows need stronger targeted
+  repair, not direct promotion.  The next data step is pair-targeted full-SRT
+  claim re-extraction for `evidence_only` rows and expanded product evidence
+  recovery for `claim_only` rows.
+- Pair-level full-SRT re-extraction pilot on 10 `evidence_only` rows confirmed
+  that exact substring grounding alone is not enough: after adding product
+  evidence hints, noisy recall fell, but the remaining recovered claim still
+  drifted to a neighboring attribute.  Promotion must therefore require a
+  separate claim-attribute validation gate before any row enters the main
+  supervised benchmark.
+
 The previous `softdropbad`, `residual conservative`, and source-conditioned
 RACL-U+C results are retained as diagnostic upper bounds and mechanism probes
 only.  They should not be reported as the main paper result unless regenerated

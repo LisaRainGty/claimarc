@@ -87,3 +87,51 @@ attribute-grounded claim extraction and product-evidence recovery. Model
 experiments should use the complete claim/evidence main candidate as the
 current supervised benchmark, while P0/P1 queue items are repaired from raw
 data before promotion.
+
+## P0 Completion Pilot
+
+First P0 batch:
+
+- verified rows: 50
+- actions: `keep_clean=2`, `keep_risk=2`, `rerun_more_evidence=43`, `drop=3`
+- relation states: `claim_only=24`, `evidence_only=15`,
+  `supports_claim=4`, `contradicts_claim=2`, `insufficient=5`
+
+Promotable examples include:
+
+- `APPAREL_是否加绒`: claim "加绒加厚的,一体绒" supported by product title.
+- `SHOEBAG_鞋底工艺`: claim "我这实心橡胶要越穿越软" contradicted by product
+  param "鞋底材质: 橡胶发泡".
+- `APPAREL_电源容量`: claim contains "20000移动电源" contradicted by product
+  param "电源容量: 10000".
+
+Most non-promotable rows are not useless; they reveal which raw-stage repair is
+needed. `claim_only` rows need stronger product-evidence retrieval from
+params/OCR/VLM, while `evidence_only` rows need pair-targeted full-SRT claim
+re-extraction rather than short keyword windows.
+
+## Pair-Level Claim Re-Extraction Pilot
+
+`src/data_quality/llm_pair_claim_reextract_v1.py` was added to test a stricter
+repair path for `evidence_only` rows: scan full raw SRT for one target
+`(product, attribute)` pair, require exact source substrings, and map them back
+to timestamps.
+
+Pilot on the first 10 `evidence_only` rows from the P0 top-50 verification:
+
+- with no product-evidence hint, 2/10 rows returned exact SRT spans, but manual
+  inspection showed attribute drift such as assigning unrelated "乌鸡骨架小" to
+  size or "双层海洋毛" to waterproof/breathability.
+- after adding the product-evidence hint to the prompt, noisy recall dropped:
+  1/10 returned a claim, 6/10 lacked SRT files, and 3/10 had no matching claim.
+- the remaining returned claim was still not promotable because "双层寒牙毛"
+  describes material/structure, not waterproof/breathability index.
+
+Conclusion: high-quality expansion requires a three-stage repair gate:
+
+1. pair-targeted full-SRT claim re-extraction;
+2. claim-attribute validation against aliases, value type, and product evidence;
+3. evidence relation validation before promotion.
+
+Rows that fail any gate remain repair/auxiliary candidates, not main training
+samples.
