@@ -496,6 +496,23 @@ product evidence previews, consumer snippets, LLM review fields, and reviewer
 decision columns, so data quality is improved through traceable adjudication
 rather than deletion of hard-but-valid rows.
 
+Remote pilot20 no-image run on 2026-06-14:
+
+- reviews:
+  `data/final/repaired_v1/full_pair_reconstruction_llm_pilot20_noimg_v1_20260614.jsonl`
+- audit:
+  `data/final/repaired_v1/full_pair_reconstruction_llm_pilot20_noimg_audit_v2_20260614.report.json`
+- manual packet:
+  `data/final/repaired_v1/full_pair_manual_audit_packet_pilot20_noimg_v2_20260614.csv`
+
+Result: 20 reviewed rows, 8 recovered claims, 5 main positives, 2 main
+negatives, 1 silver positive with insufficient product evidence, and 12
+claim/evidence repairs.  The key methodological value is the caught failure
+case: one row had consumer refute comments but `claim_evidence_relation` was
+`insufficient`; the audit gate now blocks such rows from main promotion.  This
+confirms the data line is enforcing claim-evidence-comment alignment rather
+than making the AUROC task cleaner by deletion.
+
 ## 2026-06-13 Triplet-Alignment Correction
 
 The proposal-complete candidate is now audited with an explicit

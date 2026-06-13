@@ -99,12 +99,17 @@ def promotion_state(review: dict[str, Any], rel: Counter) -> str:
         return "llm_error"
     claim_found = bool(review.get("claim_found"))
     evidence_found = bool(review.get("product_evidence_found"))
+    claim_evidence_relation = clean(review.get("claim_evidence_relation"))
     if not claim_found:
         return "repair_missing_claim"
     if not evidence_found:
         if rel.get("refute", 0) > 0:
             return "silver_refute_missing_product_evidence"
         return "repair_missing_evidence"
+    if claim_evidence_relation in {"", "insufficient"}:
+        if rel.get("refute", 0) > 0:
+            return "silver_refute_insufficient_product_evidence"
+        return "repair_insufficient_product_evidence"
     if rel.get("refute", 0) > 0:
         return "main_positive_refute"
     if rel.get("support", 0) > 0 and rel.get("mixed", 0) == 0:
@@ -259,7 +264,7 @@ def write_markdown(path: str | Path, report: dict[str, Any], args: argparse.Name
         "",
         "- `main_positive_refute`: claim found, product evidence found, and at least one aligned consumer comment refutes the same claim.",
         "- `main_negative_support`: claim found, product evidence found, and aligned consumer comments support rather than refute the claim.",
-        "- Missing claim, missing product evidence, mixed comments, and no aligned comments remain in stateful repair/silver outputs.",
+        "- Missing claim, missing/insufficient product evidence, mixed comments, and no aligned comments remain in stateful repair/silver outputs.",
     ])
     Path(path).parent.mkdir(parents=True, exist_ok=True)
     Path(path).write_text("\n".join(lines) + "\n", encoding="utf-8")

@@ -187,6 +187,7 @@ def clean_result(obj: dict[str, Any], row: dict[str, Any], model: str, max_comme
     has_refute = any(j["aligned_to_claim"] and j["relation"] == "refute" for j in judgments)
     claim_found = bool(obj.get("claim_found"))
     evidence_found = bool(obj.get("product_evidence_found"))
+    claim_evidence_relation = clean(obj.get("claim_evidence_relation"))[:40]
     new_y = 1 if claim_found and has_refute else 0
     action = clean(obj.get("action"))
     if action not in VALID_ACTION:
@@ -198,6 +199,8 @@ def clean_result(obj: dict[str, Any], row: dict[str, Any], model: str, max_comme
             action = "promote_candidate"
         else:
             action = "silver_review"
+    if action == "promote_candidate" and claim_evidence_relation in {"", "insufficient"}:
+        action = "rerun_evidence" if has_refute else "silver_review"
     return {
         "pair_id": row.get("pair_id"),
         "queue_type": row.get("queue_type"),
@@ -216,7 +219,7 @@ def clean_result(obj: dict[str, Any], row: dict[str, Any], model: str, max_comme
         "evidence_source_type": clean(obj.get("evidence_source_type"))[:40],
         "evidence_text": clean(obj.get("evidence_text"))[:240],
         "evidence_source": clean(obj.get("evidence_source"))[:180],
-        "claim_evidence_relation": clean(obj.get("claim_evidence_relation"))[:40],
+        "claim_evidence_relation": claim_evidence_relation,
         "comment_judgments": judgments,
         "new_y": new_y,
         "raw_new_y": int(obj.get("new_y", 0) or 0) if str(obj.get("new_y", "0")).isdigit() else obj.get("new_y"),

@@ -143,12 +143,17 @@ def promotion_state(review: dict[str, Any], rel: Counter) -> str:
         return "llm_error"
     claim_found = boolish(review.get("claim_found"))
     evidence_found = boolish(review.get("product_evidence_found"))
+    claim_evidence_relation = clean(review.get("claim_evidence_relation"))
     if not claim_found:
         return "repair_missing_claim"
     if not evidence_found:
         if rel.get("refute", 0) > 0:
             return "silver_refute_missing_product_evidence"
         return "repair_missing_evidence"
+    if claim_evidence_relation in {"", "insufficient"}:
+        if rel.get("refute", 0) > 0:
+            return "silver_refute_insufficient_product_evidence"
+        return "repair_insufficient_product_evidence"
     if rel.get("refute", 0) > 0:
         return "main_positive_refute"
     if rel.get("support", 0) > 0 and rel.get("mixed", 0) == 0:
@@ -212,6 +217,8 @@ def audit_one(queue_row: dict[str, Any], review: dict[str, Any] | None) -> dict[
         add_flag(flags, "medium", "invalid_confidence", confidence)
     if action not in VALID_ACTION:
         add_flag(flags, "medium", "invalid_action", action)
+    if action == "promote_candidate" and claim_evidence_relation in {"", "insufficient"}:
+        add_flag(flags, "high", "promote_with_insufficient_claim_evidence_relation", claim_evidence_relation or "empty")
 
     expected_y = 1 if claim_found and rel.get("refute", 0) > 0 else 0
     if new_y != expected_y:

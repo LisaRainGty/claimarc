@@ -312,6 +312,41 @@ previews, consumer comment snippets, optional LLM reviews, and optional audit
 flags.  It is for human inspection and adjudication, not for selecting only
 easy rows.
 
+## Remote Pilot20 No-Image Finding
+
+Remote smoke pilot on the 2026-06-14 GPU host used the stratified pilot queue
+with `--limit 20`, `--max_images 0`, and `Qwen3-VL-Plus`.  This run was a data
+protocol check, not a model benchmark.
+
+Outputs:
+
+- reviews:
+  `data/final/repaired_v1/full_pair_reconstruction_llm_pilot20_noimg_v1_20260614.jsonl`
+- LLM report:
+  `data/final/repaired_v1/full_pair_reconstruction_llm_pilot20_noimg_v1_20260614.report.json`
+- audit v2 report:
+  `data/final/repaired_v1/full_pair_reconstruction_llm_pilot20_noimg_audit_v2_20260614.report.json`
+- manual packet:
+  `data/final/repaired_v1/full_pair_manual_audit_packet_pilot20_noimg_v2_20260614.csv`
+
+Pilot summary:
+
+- 20 reviewed rows: 8 recovered claims, 12 missing-claim repairs.
+- 8 no-SRT-candidate rows behaved as boundary checks: product evidence can be
+  found, but labels remain negative/repair because no streamer claim is
+  recoverable.
+- 12 strong-SRT rows produced 5 `main_positive_refute`, 2
+  `main_negative_support`, 1 `silver_refute_insufficient_product_evidence`,
+  and 4 claim/evidence repairs.
+- The audit caught one important protocol violation: an LLM review proposed
+  promotion although `claim_evidence_relation=insufficient`.  Promotion now
+  requires a recovered claim, product evidence, aligned consumer relation, and a
+  non-`insufficient` claim-evidence relation.
+
+This finding supports continuing full-pair reconstruction, but the next pass
+must keep the audit gate active and should route insufficient product evidence
+to Stage C/VLM repair rather than main training.
+
 ## Promotion Builder
 
 Promotion builder:
@@ -338,11 +373,15 @@ Outputs:
 Promotion states:
 
 - `main_positive_refute`: claim found, product evidence found, and at least one
-  aligned consumer comment refutes the same claim.
+  aligned consumer comment refutes the same claim; the product evidence must be
+  related to the claim rather than `insufficient`.
 - `main_negative_support`: claim found, product evidence found, and aligned
-  consumer comments support rather than refute the claim.
-- `silver_refute_missing_product_evidence`, `repair_missing_claim`,
-  `repair_missing_evidence`, `silver_mixed_comment_relation`, and
+  consumer comments support rather than refute the claim; the product evidence
+  must be related to the claim rather than `insufficient`.
+- `silver_refute_missing_product_evidence`,
+  `silver_refute_insufficient_product_evidence`, `repair_missing_claim`,
+  `repair_missing_evidence`, `repair_insufficient_product_evidence`,
+  `silver_mixed_comment_relation`, and
   `lowinfo_no_aligned_comment` remain outside the main benchmark but are
   preserved for repair, weighting, and mechanism analysis.
 
