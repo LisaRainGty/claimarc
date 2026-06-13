@@ -148,6 +148,34 @@ The LLM/VLM runner now loads this prefilter by default through
 `--srt_prefilter`, so review prompts expose ranked SRT candidates and hit
 reasons instead of relying on a shallow per-call keyword scan.
 
+## Stratified LLM Pilot Queue
+
+Pilot queue builder:
+
+- `src/data_quality/build_full_pair_llm_pilot_queue_v1.py`
+
+Outputs:
+
+- pilot queue:
+  `data/final/repaired_v1/full_pair_llm_pilot_queue_v1_20260614.jsonl`
+- report:
+  `data/final/repaired_v1/full_pair_llm_pilot_queue_v1_20260614.report.json`
+- markdown:
+  `docs/FULL_PAIR_LLM_PILOT_QUEUE_20260614.md`
+
+The pilot contains 72 P0 rows sampled across SRT candidate states:
+
+| state | rows |
+|---|---:|
+| strong SRT candidate | 24 |
+| weak SRT candidate | 24 |
+| very weak SRT candidate | 16 |
+| no SRT candidate | 8 |
+
+It also covers 10 product categories, 58 `claim_missing` rows, and 14
+`claim_present_review_needed` rows.  This avoids evaluating the reconstruction
+protocol only on easy strong-candidate cases.
+
 ## Rebuild Rules
 
 For every pair, the LLM/VLM verifier must recover or judge:
@@ -192,10 +220,19 @@ Default pilot command:
 
 ```bash
 PYTHONPATH=src python3 -m data_quality.llm_full_pair_reconstruct_v1 \
+  --queue data/final/repaired_v1/full_pair_llm_pilot_queue_v1_20260614.jsonl \
   --priority P0 \
-  --limit 20 \
+  --limit 72 \
   --concurrency 2 \
   --model Qwen3-VL-Plus
+```
+
+Local non-API check:
+
+```bash
+PYTHONPATH=src python3 -m data_quality.llm_full_pair_reconstruct_v1 \
+  --queue data/final/repaired_v1/full_pair_llm_pilot_queue_v1_20260614.jsonl \
+  --dry_run
 ```
 
 The runner enforces `new_y` after parsing model output: even if the model emits

@@ -28,6 +28,8 @@ Current full-pair artifacts:
   `data/final/repaired_v1/full_pair_reconstruction_queue_v1_20260614.report.json`
 - SRT claim prefilter:
   `docs/FULL_PAIR_CLAIM_SRT_PREFILTER_20260614.md`
+- stratified LLM pilot queue:
+  `docs/FULL_PAIR_LLM_PILOT_QUEUE_20260614.md`
 - builder:
   `src/data_quality/build_full_pair_reconstruction_queue_v1.py`
 - LLM/VLM runner:
@@ -52,6 +54,18 @@ SRT prefilter result over claim-missing/review rows:
 | weak candidate | 6,769 |
 | very weak candidate | 2,141 |
 | no candidate | 80 |
+
+Stratified LLM pilot queue:
+
+| stratum | rows |
+|---|---:|
+| strong SRT candidate | 24 |
+| weak SRT candidate | 24 |
+| very weak SRT candidate | 16 |
+| no SRT candidate | 8 |
+
+The 72-row pilot is intentionally diagnostic: it includes 10 categories,
+58 `claim_missing` rows, and 14 `claim_present_review_needed` rows.
 
 Label policy for this reset:
 

@@ -11,10 +11,12 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 from collections import Counter
 from pathlib import Path
 from typing import Any
 
+import config
 from common import llm
 from common.io_utils import read_jsonl, write_json
 from data_quality.llm_verify_regeneration_queue_v2 import (
@@ -241,6 +243,7 @@ def main() -> None:
     ap.add_argument("--concurrency", type=int, default=2)
     ap.add_argument("--model", default="Qwen3-VL-Plus")
     ap.add_argument("--max_tokens", type=int, default=900)
+    ap.add_argument("--dry_run", action="store_true", help="Only report selected rows and context coverage; do not call LLM.")
     args = ap.parse_args()
 
     rows = list(read_jsonl(args.queue))
@@ -259,6 +262,37 @@ def main() -> None:
     todo = [r for r in rows if str(r.get("pair_id")) not in done]
     bundles = pidx.build_bundles()
     srt_prefilter = load_prefilter(args.srt_prefilter)
+
+    if args.dry_run:
+        report = {
+            "queue": args.queue,
+            "out": args.out,
+            "dry_run": True,
+            "selected_rows": len(rows),
+            "already_done": len(done),
+            "todo": len(todo),
+            "priority": dict(Counter(str(r.get("priority")) for r in rows)),
+            "queue_type": dict(Counter(str(r.get("queue_type")) for r in rows)),
+            "claim_state": dict(Counter(str(r.get("claim_state")) for r in rows)),
+            "prefilter_available": sum(1 for r in rows if clean(r.get("pair_id")) in srt_prefilter),
+            "examples": [
+                {
+                    "pair_id": r.get("pair_id"),
+                    "priority": r.get("priority"),
+                    "queue_type": r.get("queue_type"),
+                    "claim_state": r.get("claim_state"),
+                    "attribute_name": r.get("attribute_name"),
+                    "has_prefilter": clean(r.get("pair_id")) in srt_prefilter,
+                }
+                for r in rows[:20]
+            ],
+        }
+        write_json(args.report, report)
+        print(json.dumps(report, ensure_ascii=False, indent=2))
+        return
+
+    if not (os.environ.get("MATPOOL_API_KEY") or config.MATPOOL_API_KEY):
+        raise RuntimeError("MATPOOL_API_KEY is not set. Use --dry_run for local checks without LLM calls.")
 
     def verify(row: dict[str, Any]) -> dict[str, Any]:
         product_ctx = product_context(row, bundles)
