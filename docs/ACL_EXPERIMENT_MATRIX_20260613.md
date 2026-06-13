@@ -75,6 +75,10 @@ P0 LLM/VLM completion pilot on the prompt-ready queue:
   Counts are product-evidence refresh 52, full-SRT claim re-extraction 12,
   joint raw rescan 48, and manual/silver review 28.  These queues preserve the
   proposal label and target Stage B/C provenance repair only.
+- Product-evidence refresh now has a dedicated runner:
+  `src/data_quality/llm_product_evidence_refresh_v1.py`.  It keeps the claim
+  fixed, searches only title/params/OCR/detail-image VLM, and routes medium
+  confidence to silver rather than main training.
 - VLM evidence coverage is a major data bottleneck: only 29/910 complete rows
   and 19/481 triplet-aligned-plus-repair rows have non-empty VLM evidence,
   despite abundant raw detail images.  The next data expansion should rerun

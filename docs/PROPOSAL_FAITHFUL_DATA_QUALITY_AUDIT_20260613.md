@@ -296,3 +296,9 @@ evidence; in the 481 triplet-aligned-plus-repair view, only 19 rows do.  Since
 raw product images are abundant, the next data pass should improve C4
 attribute-targeted detail-image evidence extraction rather than treating the
 absence of VLM evidence as a true product fact.
+
+`src/data_quality/llm_product_evidence_refresh_v1.py` is the targeted execution
+entrypoint for the 52 `product_evidence_refresh` rows.  It freezes the current
+claim and proposal label, searches only product-side sources, and emits
+`keep_clean` / `keep_risk` / `keep_silver` / `rerun_more_evidence` decisions
+based on whether the recovered evidence supports or contradicts the claim.
