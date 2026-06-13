@@ -22,8 +22,21 @@ Current best completed CLAIMARC anchor:
 | setting | AP | AUROC | Macro-F1 | wF1 | status |
 |---|---:|---:|---:|---:|---|
 | hardclean auxiliary | 0.8389 | 0.9440 | 0.8840 | 0.7764 | main anchor |
+| hardclean BGE-LR | 0.8547 | 0.9492 | 0.8882 | 0.7722 | strongest compact baseline |
 | hardclean + negbonus003 | 0.8310 | 0.9426 | 0.8781 | 0.7736 | rejected |
 | source/conf prototype | fold0 only: 0.8746 | 0.9524 | 0.8982 | 0.8009 | stopped; below fold0 anchor on F1 |
+
+Current statistical status:
+
+- Paired bootstrap and room-grouped bootstrap against BGE-LR show that the
+  current hardclean CLAIMARC anchor is not yet significantly better on AP,
+  AUROC, or Macro-F1.  Its advantage is calibration and confidence-weighted
+  behavior: ECE10 0.1440 vs BGE-LR 0.1742, and pooled wF1 0.7764 vs 0.7722,
+  but `dWF1` is not significant yet (room-grouped CI includes 0).
+- Mechanism diagnosis file:
+  `data/final/cleancl/claimarc_hardclean_mechanisms_vs_bge_20260613.json`.
+  Significance file:
+  `data/final/cleancl/claimarc_vs_bge_hardclean_grouped_bootstrap_20260613.json`.
 
 ## Main Result Table
 
@@ -79,10 +92,23 @@ Completed negative ablations:
 - `cl_neg_bonus=0.03`: full CV below hardclean anchor; rejected.
 - `proto_aux_weight=0.03, source_conf, margin`: fold0 below hardclean anchor on
   Macro-F1/wF1; stopped.
+- Online fold-local BGE distillation (`distill_bge_weight=0.05`) stalled after
+  teacher construction and produced unstable validation AP; rejected as a
+  training-loop component.
+- Low-weight hpmerge auxiliary (`weight_scale=0.15`) improved neither fold-0
+  AP/AUROC nor F1 relative to hardclean; keep hpmerge as recall/QA pool only.
+- Evidence-view consistency was too memory/compute expensive in the current
+  implementation and did not improve warmup validation; redesign offline if
+  revisited.
+- Source auxiliary heads (`combo/conf/count`) hurt fold-0 primary metrics; keep
+  source metadata for diagnosis and reporting, not as a regularizer.
+- `lambda_cl=0.25` underperformed the hardclean fold-0 anchor; the default
+  `lambda_cl=0.5` remains the best completed RACL setting.
 
 Active:
 
-- `distill_bge_weight=0.05`, high-confidence disagreement-only.
+- `lambda_cl=0.75` fold-0 screen.  Validation AP is below anchor so far; stop
+  if the fold-0 test row does not beat the hardclean fold-0 anchor.
 
 ## Robustness Experiments
 
@@ -115,13 +141,29 @@ Mechanism evidence to report:
   - show that valuegate rows fail mainly because consumer alignment is weak, not
     because product evidence is impossible to find.
 
+Current mechanism findings from hardclean OOF:
+
+- CLAIMARC corrects 67 rows that BGE-LR misses; BGE-LR corrects 74 rows that
+  CLAIMARC misses.  The methods are complementary but CLAIMARC still has more
+  false positives on parameter-exact rows.
+- CLAIMARC is better than BGE-LR when exactly two evidence sources are present
+  (`dAP=+0.0475`, `dAUROC=+0.0154`, `d_wF1=+0.0255`) and in low-confidence
+  quantile slices (`q1 dAP=+0.0482`, `q3 dMacro-F1=+0.0199`).
+- CLAIMARC underperforms on digital/electronics, jewelry, shoes/bags, and some
+  OCR-only rows.  Error examples show overfiring on exact attribute mentions
+  when the evidence merely repeats the attribute name or gives a compatible
+  parameter.  This points to a data fix: exact parameter/value alignment and
+  negative claim-span veto, not more generic auxiliary rows.
+
 ## Immediate Queue
 
-1. Finish disagreement-only BGE distillation CV and compare fold0 with hardclean
-   fold0 anchor before allowing all five folds to run.
-2. If distillation fails, run one low-weight recall-pool auxiliary experiment
-   using full hpmerge or stricter teacher-consistent negatives, but only as a
-   data ablation.
-3. After selecting the strongest main setting, rerun full baselines and paired
-   bootstrap with `n_boot=2000`.
-4. Generate mechanism diagnostics from OOF files for the final chosen setting.
+1. Finish the `lambda_cl=0.75` fold-0 screen; stop it unless the test row beats
+   the hardclean fold-0 anchor.
+2. Build a targeted parameter/value alignment repair queue from the current
+   mechanism failures, prioritizing digital, jewelry, shoes/bags, OCR-only, and
+   high-confidence false positives.
+3. Use LLM/API calls only on that repair queue: verify the extracted live claim,
+   the exact product evidence span, and whether the consumer-signal supports a
+   perceived-misleading label.
+4. After the repaired data improves learnability and fold-0 screen, rerun full
+   grouped CV with `n_boot=2000` and regenerate mechanism diagnostics.

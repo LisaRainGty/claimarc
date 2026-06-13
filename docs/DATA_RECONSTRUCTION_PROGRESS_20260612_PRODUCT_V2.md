@@ -1090,3 +1090,72 @@ Contrastive-weight sweep status:
 - New active run:
   `cv_attrpol_aux_atomic_hardclean_lcl075_w025_cap1500_bs8_s0_20260613`,
   changing only `lambda_cl` from `0.5` to `0.75`.
+
+## 2026-06-13 OOF Mechanism Diagnosis
+
+Files generated:
+
+- `data/final/cleancl/claimarc_hardclean_mechanisms_vs_bge_20260613.json`
+- `data/final/cleancl/claimarc_vs_bge_hardclean_grouped_bootstrap_20260613.json`
+- script: `src/models/diagnose_oof_mechanisms.py`
+
+Overall hardclean OOF comparison:
+
+| method | AP | AUROC | Macro-F1 | wF1 | ECE10 |
+|---|---:|---:|---:|---:|---:|
+| CLAIMARC_pcls | 0.8389 | 0.9440 | 0.8840 | 0.7764 | 0.1440 |
+| BGE-LR | 0.8547 | 0.9492 | 0.8882 | 0.7722 | 0.1742 |
+
+Paired/bootstrap interpretation:
+
+- BGE-LR remains stronger on AP/AUROC/Macro-F1 for the current hardclean OOF.
+- CLAIMARC has better calibration and slightly higher confidence-weighted F1,
+  but the `dWF1` confidence interval still crosses zero under room-grouped
+  bootstrap.
+- This means the current result is not yet publishable as "significantly better
+  than all baselines"; the next improvement should be data-quality targeted,
+  not another broad regularizer.
+
+Mechanism findings:
+
+- CLAIMARC corrects 67 examples that BGE-LR misses; BGE-LR corrects 74 examples
+  that CLAIMARC misses.
+- CLAIMARC improves over BGE-LR when exactly two evidence sources are present
+  (`dAP=+0.0475`, `dAUROC=+0.0154`, `d_wF1=+0.0255`) and on lower-confidence
+  quantile slices (`q1 dAP=+0.0482`, `q3 dMacro-F1=+0.0199`).
+- CLAIMARC is weaker on digital/electronics, jewelry, shoes/bags, and some
+  OCR-only or exact-parameter rows.  The representative false positives show
+  a repeated pattern: the model fires on attribute mentions even when the
+  product evidence is compatible with the claim, title-derived, or too generic.
+
+Data implication:
+
+- The next reconstruction pass should prioritize exact claim/evidence alignment:
+  numeric values, material terms, size/weight, price/coupon math, and visual
+  property assertions.
+- LLM calls should be applied to a small repair queue rather than the whole
+  dataset: verify the live claim span, recover the exact product evidence span
+  from raw params/OCR/VLM/detail text, and adjudicate whether consumer evidence
+  indicates a perceived mismatch.
+- Candidate/hpmerge rows remain useful as a recall pool, but they should only
+  enter training after passing value alignment, source sufficiency, and
+  positive-boundary preservation checks.
+
+Targeted repair queue:
+
+- Built with `src/data_quality/build_mechanism_repair_queue_v1.py`.
+- Output:
+  `data/final/repaired_v1/mechanism_repair_queue_v1_20260613.jsonl`
+  and
+  `data/final/repaired_v1/mechanism_repair_queue_v1_20260613.stats.json`.
+- n=400 prioritized rows:
+  - exact value/material hints: 345
+  - high-confidence CLAIMARC false positives: 114
+  - BGE-correct / CLAIMARC-wrong rows: 65
+  - high-risk categories: shoes/bags 119, digital/electronics 80, jewelry 42,
+    sports/outdoor 39
+  - evidence combos: P 141, O 132, PO 109
+- Each queue row now includes raw detail-image paths under
+  `data/raw/product_images/<product_id>/`, so the next LLM/VLM pass can recover
+  evidence from the original product detail images instead of only the current
+  compressed OCR/parameter summaries.

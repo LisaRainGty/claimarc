@@ -29,10 +29,13 @@ def row(y, p, yhat, c):
     }
 
 
-def paired_bootstrap(y, p_a, yhat_a, p_b, yhat_b, n_boot=2000, seed=0):
+def paired_bootstrap(y, p_a, yhat_a, p_b, yhat_b, c=None, n_boot=2000, seed=0):
     rng = np.random.RandomState(seed)
     n = len(y)
-    dap, dau, df1 = [], [], []
+    if c is None:
+        c = np.ones_like(y, dtype=float)
+    c = np.asarray(c, float)
+    dap, dau, df1, dwf1 = [], [], [], []
     for _ in range(int(n_boot)):
         idx = rng.randint(0, n, n)
         yy = y[idx]
@@ -44,6 +47,8 @@ def paired_bootstrap(y, p_a, yhat_a, p_b, yhat_b, n_boot=2000, seed=0):
         )
         dau.append(roc_auc_score(yy, p_a[idx]) - roc_auc_score(yy, p_b[idx]))
         df1.append(macro(yy, yhat_a[idx]) - macro(yy, yhat_b[idx]))
+        ww = np.clip(c[idx], 0.05, None)
+        dwf1.append(macro(yy, yhat_a[idx], ww) - macro(yy, yhat_b[idx], ww))
 
     def summarize(values):
         arr = np.asarray(values, float)
@@ -60,15 +65,20 @@ def paired_bootstrap(y, p_a, yhat_a, p_b, yhat_b, n_boot=2000, seed=0):
         "dAP": summarize(dap),
         "dAUROC": summarize(dau),
         "dMacroF1": summarize(df1),
+        "dWF1": summarize(dwf1),
     }
 
 
-def grouped_paired_bootstrap(groups, y, p_a, yhat_a, p_b, yhat_b, n_boot=2000, seed=0):
+def grouped_paired_bootstrap(groups, y, p_a, yhat_a, p_b, yhat_b, c=None,
+                             n_boot=2000, seed=0):
     rng = np.random.RandomState(seed)
+    if c is None:
+        c = np.ones_like(y, dtype=float)
+    c = np.asarray(c, float)
     groups = np.asarray(groups, dtype=object)
     uniq = np.asarray(sorted(set(groups.tolist())), dtype=object)
     index = {g: np.flatnonzero(groups == g) for g in uniq}
-    dap, dau, df1 = [], [], []
+    dap, dau, df1, dwf1 = [], [], [], []
     for _ in range(int(n_boot)):
         sampled = rng.choice(uniq, size=len(uniq), replace=True)
         idx = np.concatenate([index[g] for g in sampled])
@@ -81,6 +91,8 @@ def grouped_paired_bootstrap(groups, y, p_a, yhat_a, p_b, yhat_b, n_boot=2000, s
         )
         dau.append(roc_auc_score(yy, p_a[idx]) - roc_auc_score(yy, p_b[idx]))
         df1.append(macro(yy, yhat_a[idx]) - macro(yy, yhat_b[idx]))
+        ww = np.clip(c[idx], 0.05, None)
+        dwf1.append(macro(yy, yhat_a[idx], ww) - macro(yy, yhat_b[idx], ww))
 
     def summarize(values):
         arr = np.asarray(values, float)
@@ -97,6 +109,7 @@ def grouped_paired_bootstrap(groups, y, p_a, yhat_a, p_b, yhat_b, n_boot=2000, s
         "dAP": summarize(dap),
         "dAUROC": summarize(dau),
         "dMacroF1": summarize(df1),
+        "dWF1": summarize(dwf1),
     }
 
 
@@ -191,6 +204,7 @@ def main():
                         case_out["significance"][f"{method}_vs_{baseline}"] = (
                             paired_bootstrap(
                                 y[ok], p_a[ok], yhat_a[ok], p_b[ok], yhat_b[ok],
+                                c=c[ok],
                                 n_boot=args.n_boot, seed=args.seed + ci)
                         )
                     if groups is not None:
@@ -198,6 +212,7 @@ def main():
                             grouped_paired_bootstrap(
                                 groups[ok], y[ok], p_a[ok], yhat_a[ok],
                                 p_b[ok], yhat_b[ok],
+                                c=c[ok],
                                 n_boot=args.n_boot, seed=args.seed + 503 + ci)
                         )
             out["cases"][label] = case_out
@@ -238,6 +253,7 @@ def main():
                 pooled["significance"][f"{method}_vs_{baseline}"] = (
                     paired_bootstrap(
                         pooled_y[ok], p_a[ok], yhat_a[ok], p_b[ok], yhat_b[ok],
+                        c=pooled_c[ok],
                         n_boot=args.n_boot, seed=args.seed + 1000 + mi * 17 + bi)
                 )
             if pooled_groups is not None:
@@ -245,6 +261,7 @@ def main():
                     grouped_paired_bootstrap(
                         pooled_groups[ok], pooled_y[ok], p_a[ok], yhat_a[ok],
                         p_b[ok], yhat_b[ok],
+                        c=pooled_c[ok],
                         n_boot=args.n_boot, seed=args.seed + 1703 + mi * 17 + bi)
                 )
     out["pooled"] = pooled
