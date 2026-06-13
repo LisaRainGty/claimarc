@@ -1024,3 +1024,28 @@ Follow-up status:
   `cv_attrpol_aux_atomic_hpmerge_loww015_cap1500_bs8_s0_20260613`.
   This uses the full hpmerge recall pool as low-weight train-only auxiliary
   data (`weight_scale=0.15`) while keeping the CLAIMARC/RACL objective unchanged.
+
+Low-weight hpmerge status:
+
+- Stopped after fold 0.  It underperformed the hardclean fold-0 anchor on all
+  primary metrics:
+  - hpmerge low-weight: AP 0.8580, AUROC 0.9458, Macro-F1 0.8995, wF1 0.8062
+  - hardclean fold-0 anchor: AP 0.8868, AUROC 0.9523, Macro-F1 0.9124, wF1 0.8370
+- Decision: full hpmerge remains a recall/QA pool, not a train-only auxiliary
+  improvement.  The extra rows improve simple learnability diagnostics but do
+  not transfer to grouped-CV CLAIMARC test performance.
+- New active run:
+  `cv_attrpol_aux_atomic_hardclean_viewcons002_w025_cap1500_bs8_s0_20260613`.
+  This keeps hardclean data fixed and adds light evidence-view consistency
+  (`view_logit_weight=0.02`, `view_embed_weight=0.02`) across
+  `source_first,no_args,params_args,ocr_args,vlm_args`.
+
+View-consistency status:
+
+- First attempt with `bs=8, accum=4` ran out of GPU memory after warmup
+  (A30 24GB; double evidence-view forward pushed allocation above 22GB).
+- Retry should use `bs=4, accum=8` and the same effective batch size.
+- `PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True` is not supported by the
+  remote PyTorch build, so the retry removes that allocator option.
+- Active retry:
+  `cv_attrpol_aux_atomic_hardclean_viewcons002_w025_cap1500_bs4_retry_s0_20260613`.
