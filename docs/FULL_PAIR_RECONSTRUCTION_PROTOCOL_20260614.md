@@ -520,6 +520,22 @@ Pilot72 result:
 | very weak SRT candidate | 15 |
 | no SRT candidate | 8 |
 
+The same builder can now seed claim-repair queues directly from the full
+13,769-row reconstruction queue by merging
+`full_pair_claim_srt_prefilter_v1_20260614.jsonl`.  The first full-scale seed
+batch is:
+
+- queue:
+  `data/final/repaired_v1/full_pair_claim_repair_queue_full_p0_strongweak120_v1_20260614.jsonl`
+- markdown:
+  `docs/FULL_PAIR_CLAIM_REPAIR_QUEUE_FULL_P0_STRONGWEAK120_20260614.md`
+
+It selects 120 P0 rows with strong/weak SRT candidates for pair-targeted claim
+re-extraction.  In the generated batch all 120 are strong SRT candidates, 23
+come from old positive claim-aligned-negative rows, and 96 are old negatives
+with strong consumer trigger comments that were never properly compared to a
+recovered claim.
+
 Claim-only re-extraction with `llm_pair_claim_reextract_v1` on these 44 rows
 found exact SRT claim candidates for 23 rows and no claim for 21 rows.  This
 confirms that the missing-claim pool mixes true source-missing rows with

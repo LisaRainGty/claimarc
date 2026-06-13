@@ -40,6 +40,8 @@ Current full-pair artifacts:
   `docs/FULL_PAIR_EVIDENCE_REPAIR8_VLM_AUDIT_20260614.md`
 - Stage-B claim repair queue:
   `docs/FULL_PAIR_CLAIM_REPAIR_QUEUE_20260614.md`
+- full P0 claim repair seed batch:
+  `docs/FULL_PAIR_CLAIM_REPAIR_QUEUE_FULL_P0_STRONGWEAK120_20260614.md`
 - claim-reextract joint review audit:
   `docs/FULL_PAIR_CLAIM_REEXTRACT23_NOIMG_AUDIT_V2_20260614.md`
 
@@ -110,6 +112,12 @@ recall from raw SRT, but the joint reviewer and promotion gate must remain
 strict.  In particular, brand/model/SKU/barcode attributes now require the SRT
 claim itself to contain the identity value; the model may not infer a brand
 claim from product parameters or consumer comments.
+
+The next expansion batch is the full-queue P0 strong/weak claim repair seed
+queue with 120 rows.  It is not a selected easy set: all rows have strong SRT
+candidates and strong consumer triggers, but they still must pass exact SRT
+claim re-extraction, full joint review, audit flags, and promotion gates before
+entering the main benchmark.
 
 Label policy for this reset:
 

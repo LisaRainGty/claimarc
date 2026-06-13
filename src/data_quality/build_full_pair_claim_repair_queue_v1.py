@@ -86,14 +86,26 @@ def evidence_hint(row: dict[str, Any]) -> dict[str, Any]:
     return {}
 
 
-def should_select(queue_row: dict[str, Any], review: dict[str, Any] | None, min_trigger_comments: int) -> bool:
-    if review is None:
+def should_select(
+    queue_row: dict[str, Any],
+    review: dict[str, Any] | None,
+    min_trigger_comments: int,
+    claim_states: set[str],
+    prefilter_states: set[str],
+) -> bool:
+    pref = queue_row.get("srt_prefilter") or {}
+    if prefilter_states and clean(pref.get("prefilter_state")) not in prefilter_states:
         return False
+    if review is None:
+        if claim_states and clean(queue_row.get("claim_state")) not in claim_states:
+            return False
+        if clean(pref.get("prefilter_state")) == "no_srt_candidate":
+            return len(trigger_comments(queue_row, 12)) >= min_trigger_comments
+        return True
     if review.get("__error__"):
         return True
     if review.get("claim_found"):
         return False
-    pref = queue_row.get("srt_prefilter") or {}
     if clean(pref.get("prefilter_state")) == "no_srt_candidate":
         return len(trigger_comments(queue_row, 12)) >= min_trigger_comments
     return True
@@ -214,7 +226,10 @@ def trigger_bucket(n: int) -> str:
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--queue", default="data/final/repaired_v1/full_pair_llm_pilot_queue_v1_20260614.jsonl")
-    ap.add_argument("--reviews", default="data/final/repaired_v1/full_pair_reconstruction_llm_pilot72_noimg_v1_20260614.jsonl")
+    ap.add_argument("--srt_prefilter", default="",
+                    help="Optional pair-level SRT prefilter file to merge when queue rows do not embed srt_prefilter.")
+    ap.add_argument("--reviews", default="data/final/repaired_v1/full_pair_reconstruction_llm_pilot72_noimg_v1_20260614.jsonl",
+                    help="Optional. If missing/empty, build seed queue directly from reconstruction rows.")
     ap.add_argument("--out", default="data/final/repaired_v1/full_pair_claim_repair_queue_v1_20260614.jsonl")
     ap.add_argument("--report", default="data/final/repaired_v1/full_pair_claim_repair_queue_v1_20260614.report.json")
     ap.add_argument("--markdown", default="docs/FULL_PAIR_CLAIM_REPAIR_QUEUE_20260614.md")
@@ -222,23 +237,53 @@ def main() -> None:
     ap.add_argument("--min_trigger_comments_for_no_srt", type=int, default=1)
     ap.add_argument("--max_comments", type=int, default=12)
     ap.add_argument("--max_srt_candidates", type=int, default=8)
+    ap.add_argument("--priorities", default="", help="Optional comma/space list such as P0,P1")
+    ap.add_argument("--claim_states", default="claim_missing,claim_present_review_needed")
+    ap.add_argument("--prefilter_states", default="strong_srt_candidate,weak_srt_candidate,very_weak_srt_candidate,no_srt_candidate")
     args = ap.parse_args()
 
-    queue_by_pair = read_by_pair(args.queue)
+    priorities = {p.strip() for p in args.priorities.replace(",", " ").split() if p.strip()}
+    claim_states = {p.strip() for p in args.claim_states.replace(",", " ").split() if p.strip()}
+    prefilter_states = {p.strip() for p in args.prefilter_states.replace(",", " ").split() if p.strip()}
+    pref_by_pair = read_by_pair(args.srt_prefilter) if args.srt_prefilter else {}
     selected: list[dict[str, Any]] = []
     missing_queue_rows = 0
     review_rows = 0
 
-    for rank, review in enumerate(read_jsonl(args.reviews), 1):
-        review_rows += 1
-        pid = pair_id(review)
-        queue_row = queue_by_pair.get(pid)
-        if not queue_row:
-            missing_queue_rows += 1
-            continue
-        if not should_select(queue_row, review, args.min_trigger_comments_for_no_srt):
-            continue
-        selected.append(build_item(queue_row, review, rank, args.max_comments, args.max_srt_candidates))
+    reviews_path = Path(args.reviews) if args.reviews else Path("")
+    if args.reviews and reviews_path.exists():
+        queue_by_pair = read_by_pair(args.queue)
+        for rank, review in enumerate(read_jsonl(args.reviews), 1):
+            review_rows += 1
+            pid = pair_id(review)
+            queue_row = queue_by_pair.get(pid)
+            if not queue_row:
+                missing_queue_rows += 1
+                continue
+            if pref_by_pair and not queue_row.get("srt_prefilter"):
+                queue_row = dict(queue_row)
+                queue_row["srt_prefilter"] = pref_by_pair.get(pid, {})
+            if priorities and clean(queue_row.get("priority")) not in priorities:
+                continue
+            if not should_select(queue_row, review, args.min_trigger_comments_for_no_srt, claim_states, prefilter_states):
+                continue
+            selected.append(build_item(queue_row, review, rank, args.max_comments, args.max_srt_candidates))
+    else:
+        for rank, queue_row in enumerate(read_jsonl(args.queue), 1):
+            pid = pair_id(queue_row)
+            if pref_by_pair and not queue_row.get("srt_prefilter"):
+                queue_row = dict(queue_row)
+                queue_row["srt_prefilter"] = pref_by_pair.get(pid, {})
+            if priorities and clean(queue_row.get("priority")) not in priorities:
+                continue
+            if not should_select(queue_row, None, args.min_trigger_comments_for_no_srt, claim_states, prefilter_states):
+                continue
+            fake_review = {
+                "action": "seed_claim_repair",
+                "claim_found": False,
+                "__error__": "",
+            }
+            selected.append(build_item(queue_row, fake_review, rank, args.max_comments, args.max_srt_candidates))
 
     selected.sort(key=selection_key)
     if args.limit and args.limit > 0:
@@ -254,6 +299,9 @@ def main() -> None:
         "review_rows": review_rows,
         "selected_rows": len(selected),
         "limit": args.limit,
+        "priorities": sorted(priorities),
+        "claim_states_filter": sorted(claim_states),
+        "prefilter_states_filter": sorted(prefilter_states),
         "missing_queue_rows": missing_queue_rows,
         "prefilter_state": dict(Counter(clean((r.get("_claim_repair") or {}).get("srt_prefilter_state")) for r in selected)),
         "source_review_action": dict(Counter(clean((r.get("_claim_repair") or {}).get("source_review_action")) for r in selected)),
