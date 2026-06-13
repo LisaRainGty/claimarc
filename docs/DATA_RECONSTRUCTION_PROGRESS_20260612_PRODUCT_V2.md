@@ -1158,6 +1158,8 @@ Targeted repair queue:
 - Built with `src/data_quality/build_mechanism_repair_queue_v1.py`.
 - LLM/VLM review entrypoint prepared:
   `src/data_quality/llm_review_mechanism_repair_queue_v1.py`.
+- Review-application entrypoint prepared:
+  `src/data_quality/apply_mechanism_repair_reviews_v1.py`.
 - Output:
   `data/final/repaired_v1/mechanism_repair_queue_v1_20260613.jsonl`
   and
@@ -1177,3 +1179,41 @@ Targeted repair queue:
   It asks only for claim quality, product-evidence relation, exact value
   alignment, likely extraction issue, and repair action.  This keeps LLM usage
   as an auditable data-quality instrument rather than a label oracle.
+- The application script converts review JSONL into candidate datasets with
+  three modes:
+  - `audit`: attach review/decision metadata only.
+  - `conservative`: drop bad claim spans, repair only low-confidence label
+    contradictions/supports, and downweight weak uncertain rows.
+  - `candidate`: more aggressive relabeling for fold-0 screening, not for the
+    final benchmark unless validated.
+- Empty-review sanity check passed:
+  `dataset_attrpol_hq_mechanism_repair_emptycheck_20260613.jsonl` keeps 2,093
+  rows, 686 positives, 1,407 negatives, and touches 0 rows.  This verifies that
+  the repair application script is inert unless review evidence exists.
+
+Planned command sequence once `MATPOOL_API_KEY` is safely available in the
+environment:
+
+```bash
+PYTHONPATH=src python -m data_quality.llm_review_mechanism_repair_queue_v1 \
+  --queue data/final/repaired_v1/mechanism_repair_queue_v1_20260613.jsonl \
+  --out data/final/repaired_v1/mechanism_repair_queue_v1_llm_review_20260613.jsonl \
+  --report data/final/repaired_v1/mechanism_repair_queue_v1_llm_review_20260613.report.json \
+  --model Qwen3-VL-Plus --limit 80 --concurrency 2 --max_images 4
+
+PYTHONPATH=src python -m data_quality.apply_mechanism_repair_reviews_v1 \
+  --dataset data/final/repaired_v1/dataset_attrpol_hq_product_rawtext_llmcurated_source_recovered_v3_dropunresolved.jsonl \
+  --review data/final/repaired_v1/mechanism_repair_queue_v1_llm_review_20260613.jsonl \
+  --queue data/final/repaired_v1/mechanism_repair_queue_v1_20260613.jsonl \
+  --mode conservative \
+  --out data/final/repaired_v1/dataset_attrpol_hq_mechanism_repaired_conservative_v1_20260613.jsonl \
+  --report data/final/repaired_v1/mechanism_repaired_conservative_v1_20260613.report.json
+```
+
+Evaluation gate:
+
+- First run learnability and a fold-0 CLAIMARC/BGE screen on the conservative
+  repaired candidate.
+- Promote it only if AP/AUROC do not regress and Macro-F1/wF1 improve on the
+  hardclean fold-0 anchor.  Otherwise keep the reviews as diagnostics and
+  refine the repair rules.
