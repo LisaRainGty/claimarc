@@ -45,6 +45,7 @@ VALID_CLAIM_EVIDENCE_REL = {
     "",
 }
 VALID_COMMENT_REL = {"support", "refute", "mixed", "unclear", "not_aligned", ""}
+IDENTITY_VALUE_ATTRS = {"品牌", "型号", "货号", "条码", "条形码", "执行标准"}
 
 
 def clean(value: Any) -> str:
@@ -68,6 +69,30 @@ def int01(value: Any) -> int:
         return 1 if int(value) == 1 else 0
     except Exception:
         return 0
+
+
+def identity_expected_values(queue_row: dict[str, Any]) -> list[str]:
+    attr = clean(queue_row.get("attribute_name")).strip("<>")
+    if attr not in IDENTITY_VALUE_ATTRS:
+        return []
+    raw_params = queue_row.get("raw_params") or {}
+    values: list[str] = []
+    if isinstance(raw_params, dict):
+        for key, val in raw_params.items():
+            key_s = clean(key).strip("<>")
+            if attr == key_s or attr in key_s or key_s in attr:
+                text = clean(val)
+                if 1 < len(text) <= 80:
+                    values.append(text)
+    return list(dict.fromkeys(values))
+
+
+def claim_contains_identity_value(queue_row: dict[str, Any], claim_text: str) -> bool | None:
+    vals = identity_expected_values(queue_row)
+    if not vals:
+        return None
+    claim_norm = compact(claim_text)
+    return any(compact(v) and compact(v) in claim_norm for v in vals)
 
 
 def read_reviews(path: str | Path) -> tuple[dict[str, dict[str, Any]], Counter]:
@@ -199,6 +224,15 @@ def audit_one(queue_row: dict[str, Any], review: dict[str, Any] | None) -> dict[
         add_flag(flags, "high", "claim_found_empty_text")
     if (not claim_found) and claim_text:
         add_flag(flags, "low", "claim_text_present_but_claim_found_false")
+    identity_hit = claim_contains_identity_value(queue_row, claim_text) if claim_found else None
+    if identity_hit is False:
+        severity = "high" if state in {"main_positive_refute", "main_negative_support"} or action == "promote_candidate" else "medium"
+        add_flag(
+            flags,
+            severity,
+            "identity_attribute_claim_lacks_value",
+            f"attr={clean(queue_row.get('attribute_name'))}",
+        )
     hit = claim_in_prefilter(queue_row, claim_text)
     if hit is False:
         add_flag(flags, "medium", "claim_not_in_top_srt_prefilter", "manual source check needed")

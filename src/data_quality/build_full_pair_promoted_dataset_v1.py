@@ -22,6 +22,9 @@ from common.io_utils import read_jsonl, write_json, write_jsonl
 from data_quality.rebuild_repaired_datasets_v1 import assign_room_splits, split_leakage
 
 
+IDENTITY_VALUE_ATTRS = {"品牌", "型号", "货号", "条码", "条形码", "执行标准"}
+
+
 def clean(value: Any) -> str:
     return str(value or "").strip()
 
@@ -65,6 +68,34 @@ def relation_counts(aligned: list[dict[str, Any]]) -> Counter:
     return Counter(clean(m.get("_judgment", {}).get("relation")) for m in aligned)
 
 
+def compact(text: Any) -> str:
+    return "".join(clean(text).split()).lower()
+
+
+def identity_expected_values(queue_row: dict[str, Any]) -> list[str]:
+    attr = clean(queue_row.get("attribute_name")).strip("<>")
+    if attr not in IDENTITY_VALUE_ATTRS:
+        return []
+    raw_params = queue_row.get("raw_params") or {}
+    values: list[str] = []
+    if isinstance(raw_params, dict):
+        for key, val in raw_params.items():
+            key_s = clean(key).strip("<>")
+            if attr == key_s or attr in key_s or key_s in attr:
+                text = clean(val)
+                if 1 < len(text) <= 80:
+                    values.append(text)
+    return list(dict.fromkeys(values))
+
+
+def identity_claim_lacks_value(queue_row: dict[str, Any], review: dict[str, Any]) -> bool:
+    vals = identity_expected_values(queue_row)
+    if not vals or not review.get("claim_found"):
+        return False
+    claim_norm = compact(review.get("claim_text"))
+    return not any(compact(v) and compact(v) in claim_norm for v in vals)
+
+
 def confidence_score(value: str) -> float:
     value = clean(value).lower()
     if value == "high":
@@ -94,7 +125,7 @@ def reliability(queue_row: dict[str, Any], review: dict[str, Any], aligned: list
     return round(max(0.03, min(0.88, score)), 4)
 
 
-def promotion_state(review: dict[str, Any], rel: Counter) -> str:
+def promotion_state(queue_row: dict[str, Any], review: dict[str, Any], rel: Counter) -> str:
     if review.get("__error__"):
         return "llm_error"
     claim_found = bool(review.get("claim_found"))
@@ -110,6 +141,8 @@ def promotion_state(review: dict[str, Any], rel: Counter) -> str:
         if rel.get("refute", 0) > 0:
             return "silver_refute_insufficient_product_evidence"
         return "repair_insufficient_product_evidence"
+    if identity_claim_lacks_value(queue_row, review):
+        return "repair_identity_claim_value"
     if rel.get("refute", 0) > 0:
         return "main_positive_refute"
     if rel.get("support", 0) > 0 and rel.get("mixed", 0) == 0:
@@ -147,7 +180,7 @@ def evidence_payload(review: dict[str, Any]) -> tuple[list[dict[str, Any]], list
 def build_row(queue_row: dict[str, Any], review: dict[str, Any]) -> dict[str, Any]:
     aligned = aligned_comments(queue_row, review)
     rel = relation_counts(aligned)
-    state = promotion_state(review, rel)
+    state = promotion_state(queue_row, review, rel)
     y = 1 if state == "main_positive_refute" else 0
     c = reliability(queue_row, review, aligned)
     ev_params, ev_ocr, ev_vlm = evidence_payload(review)

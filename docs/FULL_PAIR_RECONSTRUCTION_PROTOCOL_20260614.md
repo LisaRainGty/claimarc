@@ -484,6 +484,92 @@ Interpretation:
   should be tracked as a separate mechanism slice rather than used to inflate
   objective fact-checking claims.
 
+## Stage-B Claim Repair Queue
+
+Claim repair queue builder:
+
+- `src/data_quality/build_full_pair_claim_repair_queue_v1.py`
+
+Default command from the pilot72 no-image reviews:
+
+```bash
+PYTHONPATH=src python3 -m data_quality.build_full_pair_claim_repair_queue_v1
+```
+
+Outputs:
+
+- claim repair queue:
+  `data/final/repaired_v1/full_pair_claim_repair_queue_v1_20260614.jsonl`
+- markdown:
+  `docs/FULL_PAIR_CLAIM_REPAIR_QUEUE_20260614.md`
+
+The builder routes rows with missing recovered claim or LLM parse errors to a
+pair-targeted claim-only SRT scanner.  It attaches consumer trigger comments and
+product evidence hints, but it does not use comments as claim text.  Rows where
+comments say "直播/主播说过" but no exact SRT source exists remain
+source-missing until an original claim can be recovered.
+
+Pilot72 result:
+
+| item | count |
+|---|---:|
+| reviewed rows | 72 |
+| claim-repair rows | 44 |
+| strong SRT candidate | 6 |
+| weak SRT candidate | 15 |
+| very weak SRT candidate | 15 |
+| no SRT candidate | 8 |
+
+Claim-only re-extraction with `llm_pair_claim_reextract_v1` on these 44 rows
+found exact SRT claim candidates for 23 rows and no claim for 21 rows.  This
+confirms that the missing-claim pool mixes true source-missing rows with
+recoverable recall failures.
+
+## Claim-Reextract Joint Review
+
+Claim re-extract review queue builder:
+
+- `src/data_quality/build_full_pair_claim_reextract_review_queue_v1.py`
+
+Outputs:
+
+- joint review queue:
+  `data/final/repaired_v1/full_pair_claim_reextract_joint_review_queue_v1_20260614.jsonl`
+- markdown:
+  `docs/FULL_PAIR_CLAIM_REEXTRACT_JOINT_REVIEW_QUEUE_20260614.md`
+
+The bridge injects exact SRT claim candidates back into the full-pair reviewer;
+it is a recall-to-review step, not a promotion step.  The subsequent no-image
+joint review over 23 claim-found rows produced:
+
+| state | count |
+|---|---:|
+| `repair_missing_claim` | 17 |
+| `repair_insufficient_product_evidence` | 2 |
+| `main_positive_refute` before identity gate | 2 |
+| `silver_refute_insufficient_product_evidence` | 1 |
+| `lowinfo_no_aligned_comment` | 1 |
+
+The audit v2 gate adds a high-severity
+`identity_attribute_claim_lacks_value` flag for identity attributes such as
+brand/model/SKU/barcode when the SRT claim does not itself contain the identity
+value.  The promotion builder now mirrors this rule with
+`repair_identity_claim_value`, so a model cannot infer an unstated brand claim
+from product evidence or consumer comments.
+
+Promotion after the identity gate:
+
+| state | count |
+|---|---:|
+| conservative main rows | 1 |
+| `repair_identity_claim_value` | 1 |
+| remaining repair/silver rows | 21 |
+
+This finding sets the scaling rule: claim-only re-extraction should be used as a
+high-recall Stage-B repair layer, but final labels still require full joint
+review, identity-value checks, product evidence, and comment-same-claim
+alignment.
+
 ## Promotion Builder
 
 Promotion builder:
@@ -518,7 +604,7 @@ Promotion states:
 - `silver_refute_missing_product_evidence`,
   `silver_refute_insufficient_product_evidence`, `repair_missing_claim`,
   `repair_missing_evidence`, `repair_insufficient_product_evidence`,
-  `silver_mixed_comment_relation`, and
+  `repair_identity_claim_value`, `silver_mixed_comment_relation`, and
   `lowinfo_no_aligned_comment` remain outside the main benchmark but are
   preserved for repair, weighting, and mechanism analysis.
 

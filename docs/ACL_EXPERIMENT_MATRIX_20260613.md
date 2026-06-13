@@ -38,6 +38,10 @@ Current full-pair artifacts:
   `docs/FULL_PAIR_EVIDENCE_REPAIR_QUEUE_20260614.md`
 - evidence-repair8 VLM audit:
   `docs/FULL_PAIR_EVIDENCE_REPAIR8_VLM_AUDIT_20260614.md`
+- Stage-B claim repair queue:
+  `docs/FULL_PAIR_CLAIM_REPAIR_QUEUE_20260614.md`
+- claim-reextract joint review audit:
+  `docs/FULL_PAIR_CLAIM_REEXTRACT23_NOIMG_AUDIT_V2_20260614.md`
 
 Queue summary:
 
@@ -88,6 +92,24 @@ evidence absence.  It also shows why the final benchmark must keep stateful
 promotion gates: subjective or visually grounded evidence can help the consumer
 perception task, but rows without source-backed product evidence remain outside
 the main supervised candidate.
+
+Pilot72 claim repair and joint review:
+
+| item | count |
+|---|---:|
+| claim-missing/error rows routed to claim repair | 44 |
+| pair-targeted SRT re-extraction rows with any exact claim | 23 |
+| pair-targeted SRT re-extraction rows with no exact claim | 21 |
+| claim-found rows sent back to joint review | 23 |
+| joint review accepted claim_found | 6 |
+| promotion main rows after identity gate | 1 |
+| identity-attribute false promotion blocked | 1 |
+
+This confirms a two-layer Stage-B design: claim re-extraction should maximize
+recall from raw SRT, but the joint reviewer and promotion gate must remain
+strict.  In particular, brand/model/SKU/barcode attributes now require the SRT
+claim itself to contain the identity value; the model may not infer a brand
+claim from product parameters or consumer comments.
 
 Label policy for this reset:
 
