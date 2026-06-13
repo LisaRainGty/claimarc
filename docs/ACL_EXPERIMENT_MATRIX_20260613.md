@@ -235,19 +235,32 @@ Current residual data finding:
   evidence combinations, BGE-correct/CLAIMARC-wrong errors, and CLAIMARC
   high-confidence false positives.  This is exactly the boundary that motivates
   source-conditioned calibration and exact-value negative repair.
+- The 79 newly uncovered rows have now been reviewed, giving full residual
+  coverage 300/300 with audit status pass and issue_rate 0.01.  The residual
+  distribution is 172 insufficient, 59 supports, 45 not-verifiable, and 24
+  contradicts; likely issues are mainly generic evidence (136), missing
+  evidence (79), and value mismatch (27).
+- Applying these reviews yields two candidates.  `residual conservative v1`
+  has 1,783 rows and improves lightweight AP from 0.8856 to 0.9130.
+  `residual candidate v1` also has 1,783 rows and improves lightweight
+  Macro-F1 from 0.9278 to 0.9305.  Conservative v1 is the first end-to-end
+  RACL-U screen because it gives the cleaner ranking signal.
 
 ## Immediate Queue
 
-1. Finish the 79-row residual blinded review and apply a conservative residual
-   repair candidate.  Compare it against the current softdropbad full400 v3
-   using the same RACL-U+C OOF protocol.
-2. Promote source-conditioned RACL-U+C into a formal method variant and rerun
+1. Finish residual conservative v1 fold-0 RACL-U screen on the GPU.  If it
+   preserves the fold-0 RACL-U/RACL-U+C gains, run the full 5-fold CV and
+   then source-conditioned RACL-U+C OOF calibration.
+2. If conservative v1 weakens CLAIMARC despite the lightweight AP gain, run
+   residual candidate v1 fold-0; its lightweight Macro-F1 is better but AP is
+   less clean.
+3. Promote source-conditioned RACL-U+C into a formal method variant and rerun
    confirmation diagnostics with fixed pre-registered hyperparameters:
    score-only, source-conditioned, and selected source/full.
-3. Add a narrow robustness ablation around the mask threshold:
+4. Add a narrow robustness ablation around the mask threshold:
    `(cl_c_min, cl_neg_c_min) in {(0.1,0.1), (0.2,0.2), (0.3,0.3)}` only after
    the calibration diagnostic identifies whether AP or F1 is the binding
    constraint.
-4. Use the full400 review states to build a formal RACL-U data artifact:
+5. Use the full400/residual review states to build a formal RACL-U data artifact:
    utility-positive support/contradiction evidence, low-utility ignore masks,
    and bad-claim exclusion, without adding an LLM at inference time.

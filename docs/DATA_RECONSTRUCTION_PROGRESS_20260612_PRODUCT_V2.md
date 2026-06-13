@@ -1653,3 +1653,48 @@ The residual queue is valuable because it focuses on the remaining boundary:
 exact parameter/value-compatible evidence where CLAIMARC can still overfire,
 and high-confidence negatives where both models may be missing a contradiction
 or consumer-expectation gap.
+
+Residual blinded review:
+
+- `data/final/repaired_v1/mechanism_repair_raclu_residual300_v1_llm_review_20260613.jsonl`
+- `data/final/repaired_v1/mechanism_repair_raclu_residual300_v1_llm_review_audit_20260613.json`
+- coverage=1.0, n_reviews=300, errors=0, audit status=pass, issue_rate=0.01.
+- 221 rows reuse the full400 Qwen3-VL-Plus blinded review; 79 newly uncovered
+  rows were reviewed with the same text prompt over params/OCR/VLM summaries
+  using Qwen-Flash after multi-image calls proved too slow.
+
+Review distribution:
+
+| field | dominant counts |
+|---|---|
+| claim_quality | clear 213, mixed 80, garbled 7 |
+| relation_to_claim | insufficient 172, supports 59, not_verifiable 45, contradicts 24 |
+| value_alignment | ambiguous 101, not_applicable 93, compatible 57, contradiction 27, exact_match 22 |
+| repair_action | recover_more_evidence 228, keep_relation 56, drop_bad_claim 16 |
+| likely_issue | generic_evidence 136, missing_evidence 79, none 45, value_mismatch 27 |
+
+Applied residual repair candidates:
+
+| candidate | rows | y=1 | dropped | label changes | note |
+|---|---:|---:|---:|---|---|
+| residual conservative v1 | 1,783 | 615 | 173 | 11 risk->clean, 4 clean->risk | safer relabel threshold |
+| residual candidate v1 | 1,783 | 614 | 173 | 14 risk->clean, 6 clean->risk | more aggressive contradiction/support relabel |
+
+Lightweight learnability screen:
+
+| dataset | AP | AUROC | Macro-F1 |
+|---|---:|---:|---:|
+| softdropbad full400 v3 | 0.8856 | 0.9529 | 0.9278 |
+| residual conservative v1 | 0.9130 | 0.9535 | 0.9287 |
+| residual candidate v1 | 0.8950 | 0.9547 | 0.9305 |
+
+Interpretation:
+
+- The residual review confirms that the main remaining data issue is not random
+  label noise: it is concentrated in generic/missing evidence, exact-value
+  compatibility, and contradiction/value-mismatch cases.
+- Conservative repair gives a large lightweight AP gain, so it is the first
+  dataset to send into end-to-end RACL-U fold-0 screening.
+- Candidate repair gives the best lightweight Macro-F1 but weaker AP, so it is
+  held as a second-line dataset if conservative repair does not improve the
+  full model.
