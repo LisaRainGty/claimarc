@@ -1160,6 +1160,8 @@ Targeted repair queue:
   `src/data_quality/llm_review_mechanism_repair_queue_v1.py`.
 - Review-application entrypoint prepared:
   `src/data_quality/apply_mechanism_repair_reviews_v1.py`.
+- Review-audit gate prepared:
+  `src/data_quality/audit_mechanism_repair_reviews_v1.py`.
 - Output:
   `data/final/repaired_v1/mechanism_repair_queue_v1_20260613.jsonl`
   and
@@ -1201,6 +1203,13 @@ Targeted repair queue:
   `dataset_attrpol_hq_mechanism_repair_emptycheck_20260613.jsonl` keeps 2,093
   rows, 686 positives, 1,407 negatives, and touches 0 rows.  This verifies that
   the repair application script is inert unless review evidence exists.
+- Review-audit sanity checks passed:
+  - empty review fails normal thresholds (`too_few_reviews`,
+    `coverage_below_min`);
+  - feeding the raw pilot queue as if it were review output fails schema checks
+    (`invalid_claim_quality`, `invalid_relation_to_claim`,
+    `invalid_value_alignment`, etc.).
+  This audit step must pass before any review file is applied to the dataset.
 
 Planned command sequence once `MATPOOL_API_KEY` is safely available in the
 environment:
@@ -1211,6 +1220,13 @@ PYTHONPATH=src python -m data_quality.llm_review_mechanism_repair_queue_v1 \
   --out data/final/repaired_v1/mechanism_repair_pilot80_v1_llm_review_20260613.jsonl \
   --report data/final/repaired_v1/mechanism_repair_pilot80_v1_llm_review_20260613.report.json \
   --model Qwen3-VL-Plus --limit 0 --concurrency 2 --max_images 4
+
+PYTHONPATH=src python -m data_quality.audit_mechanism_repair_reviews_v1 \
+  --queue data/final/repaired_v1/mechanism_repair_pilot80_v1_20260613.jsonl \
+  --review data/final/repaired_v1/mechanism_repair_pilot80_v1_llm_review_20260613.jsonl \
+  --out data/final/repaired_v1/mechanism_repair_pilot80_v1_llm_review_audit_20260613.json \
+  --min_reviews 72 --min_coverage 0.90 --max_issue_rate 0.10 \
+  --require_all_review_ids_in_queue
 
 PYTHONPATH=src python -m data_quality.apply_mechanism_repair_reviews_v1 \
   --dataset data/final/repaired_v1/dataset_attrpol_hq_product_rawtext_llmcurated_source_recovered_v3_dropunresolved.jsonl \
