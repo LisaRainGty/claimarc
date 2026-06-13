@@ -494,3 +494,46 @@
 5. 协议化 `cv_racl_proto_evtype_protocol.py` 已把该信号写成两个固定分支：`cal50` 为 0.5071 / 0.6430 / 0.6084，`raw25` 为 0.5070 / 0.6438 / 0.6084。二者均显著胜 BGE/旧 CM+BGE；相对 evidence-type adapter 仍未显著。实验决策更新为：prototype calibration 可写成 ranking/screening enhancement，但不能替代 evidence-type adapter 作为独立主结论。
 6. `cv_racl_proto_decision_feature.py` 进一步验证 source-sufficiency decision：在 `source_count==0` 上用 raw prototype rank <0.20 veto 正判、>0.75 promote 负判，得到 0.5070 / 0.6438 / 0.6142；相对 evidence-type adapter 的 Macro-F1 sample p=0.0012、pair-level group p=0.0090，且 AP/AUROC 不降。source0-only nested threshold selector 同样为 0.5070 / 0.6438 / 0.6142，相对 evidence-type 的 Macro-F1 sample p=0.0010、group p=0.0050。实验决策更新为：prototype 已经不仅是 ranking signal，也能作为 source-poor sufficiency guard；下一步是新增 split 或预注册后复跑，而不是继续扩大 selector。
 7. 新增 `fold_seed=3/4` 验证后，结论更稳但也更细：基础 CLAIMARC pcls 在 fs3/fs4 仍弱于 BGE，说明端到端模型不是主张；`rankavg_bge_cm_proto_source_bin` 在两个新 split 上稳定改善 BGE 的 AP/AUROC，fs3+fs4 pooled 为 0.5009 / 0.6448 / 0.5893；BGE-base prototype decision `proto_decision_cvselect_macro_rankavg_bge_cm_proto_source_bin` 进一步到 0.5009 / 0.6448 / 0.5981，相对 BGE 的 Macro-F1 sample p=0.0012、room-level p=0.0064。实验决策更新为：主线应写成 **RACL prototype relation score + source/evidence sufficiency decision protocol**；score-only prototype、fixed guard、cross-fit selector 必须拆开报告，不能把 decision edit 相对 score-only 的未显著增益说成已闭环。
+
+## 10. 2026-06-13 追加：proposal-faithful 数据纠偏后的最新文献校准
+
+### Selective multimodal retrieval / evidence localization
+
+- 来源：FEVER 2026 / IJCNLP 2025  
+  https://aclanthology.org/2026.fever-1.10/  
+  https://aclanthology.org/2026.fever-1.8/  
+  https://aclanthology.org/2025.ijcnlp-long.175.pdf
+- 关键点：新近多模态 fact verification 不再默认“所有模态全程传播”。Selective Multimodal Retrieval 把多模态作为可控设计变量；REVEAL 强调混合检索对复杂多模态验证的重要性；MuSciClaims 的诊断任务显示错误常来自视觉理解、证据定位、跨模态聚合与 epistemic sensitivity。
+- 对 CLAIMARC 的启发：当前 910 / 481 proposal-faithful 视图中 VLM evidence 覆盖极低，这不是可以忽略的缺失，而是 Stage C4 证据定位未充分运行。下一步数据优化应优先做 attribute-targeted detail-image evidence refresh，并把 VLM 作为可选择、可验证的证据源，而不是把视觉描述粗暴拼入所有样本。
+
+### Contrastive retrieval for fact-checking
+
+- 来源：SemEval / ACL 2025 fact-checking retrieval  
+  https://aclanthology.org/2025.semeval-1.295.pdf  
+  https://aclanthology.org/2025.semeval-1.303.pdf  
+  https://aclanthology.org/2025.semeval-1.323.pdf
+- 关键点：2025 多语 claim retrieval 共享任务中，dual-encoder + contrastive learning / multi-source alignment 仍是高效 claim-to-evidence retrieval 的主流结构之一，尤其适合大规模候选库与跨域匹配。
+- 对 CLAIMARC 的启发：保留 RACL 是合理的，但当前 481-row sanity fold 的 `lambda_cl=0` 与默认版选择同一 early checkpoint，说明问题不在“要不要 CL”，而在 proposal-faithful 池缺少足够同属性反标签、证据充分的邻居。应先通过 Stage B/C 修复扩展自然边界样本，再做完整 RACL 消融。
+
+### Conflicting evidence and source reliability
+
+- 来源：IJCAI/arXiv 2025, EACL/FEVER 2026  
+  https://arxiv.org/html/2505.17762v1  
+  https://aclanthology.org/2026.eacl-long.302.pdf  
+  https://aclanthology.org/2026.fever-1.7/
+- 关键点：conflicting-evidence fact-checking 与 KG-augmented contrastive reasoning 都强调证据源可信度、支持/反驳关系和冲突处理。Ensemble/multi-source retrieval 强化了同一 claim 需要多 evidence units 汇聚，而非单条 evidence 定输赢。
+- 对 CLAIMARC 的启发：proposal 标签是消费者感知风险，不等同于 objective contradiction；因此模型侧应把 relation/sufficiency 作为 evidence-side structure，不能用 product evidence relation 直接改 `y`。当前新增的 `product_evidence_refresh` runner 正符合这个边界：只修 product evidence 与 claim 的 relation，不触碰消费者标签。
+
+### Agentic evidence retrieval
+
+- 来源：2026 multi-sourced / multi-agent fact-checking  
+  https://arxiv.org/html/2603.00267v1
+- 关键点：agentic fact-checking 把 claim assessment、structured retrieval、web/KG completion 拆成多个可审计步骤。
+- 对 CLAIMARC 的启发：数据重构也应拆阶段执行。`claim_only`、`evidence_only`、`insufficient` 不应再混在一个大 prompt 里，而应分别运行 product-evidence refresh、full-SRT claim re-extraction、joint raw rescan；每一步保留 provenance，再由 B4 重建评论对齐标签。
+
+### 当前实验决策
+
+1. 主数据原则更新为：完整 claim、product evidence、proposal-consumer label 三元组必须保留；数据质量优化只补充和校验 Stage B/C/D provenance，不以提高 AUROC 可分性为目标。
+2. 481-row triplet-aligned-plus-P0-repair 只作为 sanity benchmark。fold0 上 CLAIMARC AP 高于 BGE 但 AUROC/F1 低，`lambda_cl=0` 选同一 early checkpoint；这支持先扩展 proposal-faithful 边界邻居，再跑 RACL 主实验。
+3. 下一轮优先执行 `product_evidence_refresh` 52 条和 `joint_raw_rescan` 48 条；VLM/OCR evidence 的目标是从原图/原 OCR 找属性证据，而不是用模型生成不可追溯描述。
+4. 模型微调暂不扩复杂结构；保留 dual-stream + RACL，后续只考虑 source-aware relation/sufficiency calibration 和 RACL prototype relation score，避免把普通 meta classifier 或大 prompt verdict 写成主方法。
