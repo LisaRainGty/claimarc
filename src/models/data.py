@@ -147,6 +147,7 @@ class Batch:
     y: torch.Tensor
     c: torch.Tensor
     teacher_p: torch.Tensor
+    contrastive_mask: torch.Tensor
     source_count: torch.Tensor
     source_len: torch.Tensor
     arg_len: torch.Tensor
@@ -158,7 +159,20 @@ class Batch:
 
 def source_count(rec: dict) -> int:
     ev = rec.get("evidence_count", {}) or {}
-    return int(ev.get("params", 0) or 0) + int(ev.get("ocr", 0) or 0) + int(ev.get("vlm", 0) or 0)
+    if isinstance(ev, dict):
+        return (
+            int(ev.get("params", 0) or 0)
+            + int(ev.get("ocr", 0) or 0)
+            + int(ev.get("vlm", 0) or 0)
+        )
+    try:
+        return int(ev)
+    except Exception:
+        return (
+            len(rec.get("evidence_params") or [])
+            + len(rec.get("evidence_ocr") or [])
+            + len(rec.get("evidence_vlm") or [])
+        )
 
 
 def source_len(rec: dict) -> int:
@@ -232,6 +246,7 @@ class ClaimDataset(Dataset):
             "y": float(r.get("y", 0)),
             "c": float(r.get("c", 0.05)),
             "teacher_p": float(r.get("_teacher_p", -1.0)),
+            "contrastive_mask": float(bool(r.get("contrastive_mask", True))),
             "source_count": float(source_count(r)),
             "source_len": float(source_len(r)),
             "arg_len": float(arg_len(r)),
@@ -270,6 +285,7 @@ def make_collate(pad_id: int):
             y=torch.tensor([it["y"] for it in items], dtype=torch.float),
             c=torch.tensor([it["c"] for it in items], dtype=torch.float),
             teacher_p=torch.tensor([it["teacher_p"] for it in items], dtype=torch.float),
+            contrastive_mask=torch.tensor([it["contrastive_mask"] for it in items], dtype=torch.float),
             source_count=torch.tensor([it["source_count"] for it in items], dtype=torch.float),
             source_len=torch.tensor([it["source_len"] for it in items], dtype=torch.float),
             arg_len=torch.tensor([it["arg_len"] for it in items], dtype=torch.float),
@@ -286,5 +302,8 @@ def load_split(dataset_path: str) -> dict[str, list[dict]]:
     with open(dataset_path, encoding="utf-8") as f:
         for line in f:
             r = json.loads(line)
-            by.get(r.get("split", "train"), by["train"]).append(r)
+            if r.get("y") is None:
+                continue
+            split = r.get("split") or "train"
+            by.get(split, by["train"]).append(r)
     return by

@@ -307,7 +307,8 @@ class MemoryBank:
                  teacher_p: torch.Tensor | np.ndarray | None = None,
                  evidence_combo: list[str] | np.ndarray | None = None,
                  confidence: list[str] | np.ndarray | None = None,
-                 source_bin: list[str] | np.ndarray | None = None):
+                 source_bin: list[str] | np.ndarray | None = None,
+                 contrastive_mask: list[bool] | np.ndarray | torch.Tensor | None = None):
         self.g = g
         self.attrs = np.array(attrs)
         self.y = y.cpu().numpy()
@@ -335,6 +336,12 @@ class MemoryBank:
             self.source_bin = np.asarray([""] * len(self.y), dtype=object)
         else:
             self.source_bin = np.asarray(source_bin, dtype=object)
+        if contrastive_mask is None:
+            self.contrastive_mask = np.ones(len(self.y), dtype=bool)
+        elif isinstance(contrastive_mask, torch.Tensor):
+            self.contrastive_mask = contrastive_mask.cpu().numpy().astype(bool)
+        else:
+            self.contrastive_mask = np.asarray(contrastive_mask, dtype=bool)
 
     def neighbors(self, gq: torch.Tensor, mask: np.ndarray, k: int,
                   bonus: np.ndarray | None = None):
@@ -374,6 +381,8 @@ def contrastive_loss(g, batch, bank: MemoryBank, cw, Kp=3, Kn=5, tau=0.07, globa
         raise ValueError(f"unknown cl_teacher_mode: {cl_teacher_mode}")
     neg_teacher_ok = bank_teacher_ok if cl_teacher_mode == "agree" else np.ones(len(bank.y), dtype=bool)
     for i in range(len(batch.y)):
+        if hasattr(batch, "contrastive_mask") and float(batch.contrastive_mask[i].item()) < 0.5:
+            continue
         if float(cw[i].detach().cpu()) < cl_c_min:
             continue
         a = batch.attr[i]; yi = int(batch.y[i].item())
@@ -384,13 +393,14 @@ def contrastive_loss(g, batch, bank: MemoryBank, cw, Kp=3, Kn=5, tau=0.07, globa
             if int(tpi >= 0.5) != yi:
                 continue
         same = (bank.attrs == a)
-        pos_mask = same & (bank.y == yi) & (bank.c >= cl_c_min) & bank_teacher_ok
+        eligible = bank.contrastive_mask
+        pos_mask = same & (bank.y == yi) & (bank.c >= cl_c_min) & bank_teacher_ok & eligible
         if global_neg:
-            base_neg_mask = (bank.y != yi) & (bank.c >= cl_neg_c_min) & neg_teacher_ok  # 全集合随机反标签（消融对照）
+            base_neg_mask = (bank.y != yi) & (bank.c >= cl_neg_c_min) & neg_teacher_ok & eligible  # 全集合随机反标签（消融对照）
         else:
-            base_neg_mask = same & (bank.y != yi) & (bank.c >= cl_neg_c_min) & neg_teacher_ok
+            base_neg_mask = same & (bank.y != yi) & (bank.c >= cl_neg_c_min) & neg_teacher_ok & eligible
             if base_neg_mask.sum() == 0:
-                base_neg_mask = (bank.y != yi) & (bank.c >= cl_neg_c_min) & neg_teacher_ok
+                base_neg_mask = (bank.y != yi) & (bank.c >= cl_neg_c_min) & neg_teacher_ok & eligible
         neg_mask = base_neg_mask
         neg_bonus = None
         ev_i = str(batch.evidence_combo[i])
@@ -509,10 +519,13 @@ def prototype_aux_loss(g, batch, bank: MemoryBank | None, cw, args, device):
     bank_g = F.normalize(bank.g.float().detach(), dim=-1)
     g_norm = F.normalize(g.float(), dim=-1)
     group_arr = _bank_group_array(bank, group)
-    global_pos = (bank.y == 1) & (bank.c >= c_min)
-    global_neg = (bank.y == 0) & (bank.c >= c_min)
+    eligible = bank.contrastive_mask
+    global_pos = (bank.y == 1) & (bank.c >= c_min) & eligible
+    global_neg = (bank.y == 0) & (bank.c >= c_min) & eligible
     losses = []
     for i in range(len(batch.y)):
+        if hasattr(batch, "contrastive_mask") and float(batch.contrastive_mask[i].item()) < 0.5:
+            continue
         if float(cw[i].detach().cpu()) < c_min:
             continue
         key = _batch_group_value(batch, i, group)
@@ -795,12 +808,20 @@ def train(args, splits=None, return_model=False):
         src_bin = []
         for r in splits["train"]:
             ev = r.get("evidence_count", {}) or {}
-            sc = sum(int(ev.get(k, 0) or 0) for k in ("params", "ocr", "vlm"))
+            if isinstance(ev, dict):
+                sc = sum(int(ev.get(k, 0) or 0) for k in ("params", "ocr", "vlm"))
+            else:
+                try:
+                    sc = int(ev)
+                except Exception:
+                    sc = 0
             src_bin.append(source_bin_from_count_value(sc))
+        cmask = [bool(r.get("contrastive_mask", True)) for r in splits["train"]]
         return (
             MemoryBank(g.to(device), attrs, torch.tensor(y), c,
                        teacher_p=teacher_p, evidence_combo=ev_combo,
-                       confidence=conf, source_bin=src_bin),
+                       confidence=conf, source_bin=src_bin,
+                       contrastive_mask=cmask),
             (g, y, c),
         )
 
