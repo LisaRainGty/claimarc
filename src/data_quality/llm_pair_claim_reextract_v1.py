@@ -13,6 +13,7 @@ import argparse
 import json
 import os
 from collections import Counter
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Any
 
@@ -198,6 +199,70 @@ def extract_for_pair(row: dict[str, Any], chunk_chars: int, model: str, max_toke
     }
 
 
+def error_result(row: dict[str, Any], exc: BaseException) -> dict[str, Any]:
+    return {
+        "pair_id": pair_id(row),
+        "product_id": row.get("product_id"),
+        "attribute_id": row.get("attribute_id"),
+        "attribute_name": row.get("attribute_name"),
+        "queue_type": row.get("queue_type"),
+        "current_y": row.get("current_y"),
+        "current_c": row.get("current_c"),
+        "status": "error",
+        "claims": [],
+        "errors": [{"__error__": repr(exc)[:240]}],
+    }
+
+
+def process_batch(
+    batch: list[dict[str, Any]],
+    *,
+    out: Path,
+    counts: Counter,
+    progress_start: int,
+    total: int,
+    chunk_chars: int,
+    model: str,
+    max_tokens: int,
+    concurrency: int,
+) -> int:
+    processed = 0
+
+    def run(row: dict[str, Any]) -> dict[str, Any]:
+        return extract_for_pair(row, chunk_chars, model, max_tokens)
+
+    if concurrency <= 1:
+        for row in batch:
+            res = run(row)
+            counts[res.get("status", "")] += 1
+            append_jsonl(out, res)
+            processed += 1
+            done = progress_start + processed
+            print(f"[pair_claim_reextract] {done}/{total} {res['pair_id']} {res['status']} n={len(res.get('claims') or [])}", flush=True)
+        return processed
+
+    ex = ThreadPoolExecutor(max_workers=concurrency)
+    try:
+        futures = {ex.submit(run, row): row for row in batch}
+        for fut in as_completed(futures):
+            row = futures[fut]
+            try:
+                res = fut.result()
+            except Exception as exc:  # noqa: BLE001
+                res = error_result(row, exc)
+            counts[res.get("status", "")] += 1
+            append_jsonl(out, res)
+            processed += 1
+            done = progress_start + processed
+            print(f"[pair_claim_reextract] {done}/{total} {res['pair_id']} {res['status']} n={len(res.get('claims') or [])}", flush=True)
+    except KeyboardInterrupt:
+        ex.shutdown(wait=False, cancel_futures=True)
+        raise
+    else:
+        ex.shutdown(wait=True)
+    return processed
+
+
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--queue", default="data/final/repaired_v1/proposal_llm_completion_queue_v1_20260613.jsonl")
@@ -210,6 +275,8 @@ def main() -> None:
     ap.add_argument("--chunk_chars", type=int, default=2200)
     ap.add_argument("--model", default="Qwen-Flash")
     ap.add_argument("--max_tokens", type=int, default=700)
+    ap.add_argument("--concurrency", type=int, default=1)
+    ap.add_argument("--batch_size", type=int, default=20)
     args = ap.parse_args()
 
     rows = read_queue(args.queue)
@@ -234,12 +301,29 @@ def main() -> None:
     done = load_done(out)
     todo = [r for r in rows if pair_id(r) not in done]
     counts = Counter()
-    for i, row in enumerate(todo, 1):
-        res = extract_for_pair(row, args.chunk_chars, args.model, args.max_tokens)
-        counts[res.get("status", "")] += 1
-        append_jsonl(out, res)
-        print(f"[pair_claim_reextract] {i}/{len(todo)} {res['pair_id']} {res['status']} n={len(res.get('claims') or [])}", flush=True)
-    report = {"out": str(out), "processed": len(todo), "status": dict(counts)}
+    processed = 0
+    batch_size = max(1, args.batch_size)
+    for start in range(0, len(todo), batch_size):
+        batch = todo[start:start + batch_size]
+        processed += process_batch(
+            batch,
+            out=out,
+            counts=counts,
+            progress_start=processed,
+            total=len(todo),
+            chunk_chars=args.chunk_chars,
+            model=args.model,
+            max_tokens=args.max_tokens,
+            concurrency=max(1, args.concurrency),
+        )
+    report = {
+        "out": str(out),
+        "processed": processed,
+        "already_done": len(done),
+        "status": dict(counts),
+        "concurrency": max(1, args.concurrency),
+        "batch_size": batch_size,
+    }
     write_json(str(out) + ".report.json", report)
     print(json.dumps(report, ensure_ascii=False, indent=2))
 
