@@ -1144,6 +1144,8 @@ Data implication:
 Targeted repair queue:
 
 - Built with `src/data_quality/build_mechanism_repair_queue_v1.py`.
+- LLM/VLM review entrypoint prepared:
+  `src/data_quality/llm_review_mechanism_repair_queue_v1.py`.
 - Output:
   `data/final/repaired_v1/mechanism_repair_queue_v1_20260613.jsonl`
   and
@@ -1159,3 +1161,7 @@ Targeted repair queue:
   `data/raw/product_images/<product_id>/`, so the next LLM/VLM pass can recover
   evidence from the original product detail images instead of only the current
   compressed OCR/parameter summaries.
+- The review prompt deliberately withholds current labels and model predictions.
+  It asks only for claim quality, product-evidence relation, exact value
+  alignment, likely extraction issue, and repair action.  This keeps LLM usage
+  as an auditable data-quality instrument rather than a label oracle.
