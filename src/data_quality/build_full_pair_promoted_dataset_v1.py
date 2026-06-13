@@ -30,9 +30,78 @@ PRICE_VALUE_JUDGMENT_TERMS = {"太贵", "偏贵", "不便宜", "小贵", "不值
 PRICE_OVERCHARGE_CUES = {"多收", "贵了", "贵", "涨价", "不是这个价", "价格不符", "实付", "到手不是", "付款"}
 QUANTITY_VALUE_JUDGMENT_TERMS = {"太少", "少的可怜", "量少", "分量少", "不多", "最少也得", "应该", "应为", "不够"}
 NUMERIC_CONFLICT_CUES = {"不是", "不符", "少发", "少给", "只有", "收到少", "实付", "到手不是", "降价", "买成"}
-COMMERCIAL_PROMISE_ATTRS = {"售卖方式", "购买渠道", "广告宣传", "宣传", "活动信息"}
-GENERIC_ATTRIBUTE_NAMES = {"描述", "描述相符", "商品描述", "广告宣传", "宣传"}
-SUBJECTIVE_EVAL_ATTR_TERMS = {"智商税", "虚假宣传", "商品质量", "真实性评价", "性价比", "体验", "感受", "评价", "推荐"}
+COMMERCIAL_PROMISE_ATTRS = {
+    "售卖方式",
+    "购买渠道",
+    "广告宣传",
+    "宣传",
+    "活动信息",
+    "促销活动",
+    "活动规则",
+    "直播间优惠信息",
+    "直播活动信息",
+    "优惠券规则",
+    "赔偿金额",
+    "官方说辞",
+    "广告词",
+    "广告参与",
+    "过度营销",
+    "价格欺诈",
+}
+GENERIC_ATTRIBUTE_NAMES = {
+    "描述",
+    "描述相符",
+    "商品描述",
+    "广告宣传",
+    "宣传",
+    "产品",
+    "商品",
+    "商品属性",
+    "属性",
+    "属性名",
+    "客观属性名词短语",
+}
+SCHEMA_META_ATTRS = {
+    "视频内容",
+    "直播内容",
+    "详情页",
+    "图文详情",
+    "实物图描述",
+    "与事实不符",
+    "描述不符",
+    "宣传内容",
+    "直播宣传效果",
+    "宣传效果",
+    "宣传力度",
+}
+SCHEMA_META_ATTR_TERMS = {"宣传与实物匹配度"}
+SUBJECTIVE_EVAL_ATTR_TERMS = {
+    "智商税",
+    "虚假宣传",
+    "商品质量",
+    "真实性评价",
+    "性价比",
+    "体验",
+    "感受",
+    "评价",
+    "推荐",
+    "购买意图",
+    "消费者心理",
+    "商家信誉",
+    "是否上当",
+    "是否忽悠",
+    "廉价感",
+    "价值判断",
+    "好评真实性",
+    "宣传真实性",
+    "购买体验",
+    "假货",
+    "真假",
+    "真伪",
+    "社交效果",
+    "利用价值",
+    "价格透明度",
+}
 COLOR_ATTR_TERMS = {"颜色", "包装颜色", "色"}
 EXPECTATION_MISMATCH_CUES = {"以为", "以爲", "没看清", "本来是买", "本来想买", "结果来一看"}
 COUNT_UNIT_CUES = {"个", "颗", "件", "瓶", "袋", "双", "盒", "片", "支", "只", "排"}
@@ -233,6 +302,13 @@ def subjective_eval_attr(queue_row: dict[str, Any]) -> bool:
     return any(term in attr for term in SUBJECTIVE_EVAL_ATTR_TERMS)
 
 
+def schema_meta_attr(queue_row: dict[str, Any]) -> bool:
+    attr = clean(queue_row.get("attribute_name")).strip("<>")
+    if attr in SCHEMA_META_ATTRS or attr in GENERIC_ATTRIBUTE_NAMES:
+        return True
+    return any(term in attr for term in SCHEMA_META_ATTR_TERMS)
+
+
 def consumer_expectation_mismatch(queue_row: dict[str, Any], review: dict[str, Any], rel: Counter) -> bool:
     if not (rel.get("support", 0) > 0 and rel.get("refute", 0) > 0):
         return False
@@ -363,6 +439,8 @@ def promotion_state(queue_row: dict[str, Any], review: dict[str, Any], rel: Coun
         return "silver_commercial_promise_attribute"
     if subjective_eval_attr(queue_row):
         return "silver_subjective_eval_attribute"
+    if schema_meta_attr(queue_row):
+        return "silver_schema_meta_attribute"
     if consumer_expectation_mismatch(queue_row, review, rel):
         return "silver_consumer_expectation_mismatch"
     if attribute_semantic_drift(queue_row, review):
