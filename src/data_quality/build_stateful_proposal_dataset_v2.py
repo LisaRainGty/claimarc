@@ -227,6 +227,10 @@ def annotate_claim_families(rows: list[dict[str, Any]]) -> dict[str, Any]:
 
 def build_row(queue_row: dict[str, Any], review: dict[str, Any]) -> dict[str, Any]:
     aligned = aligned_comments(queue_row, review)
+    if not review.get("claim_found"):
+        # Without a recovered livestream claim, comment relations cannot be
+        # proposal-valid alignments even if the raw LLM judgment named refute.
+        aligned = []
     rel = relation_counts(aligned)
     state = promotion_state(queue_row, review, rel)
     y = y_perception_from_relations(review, rel)
