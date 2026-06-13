@@ -389,6 +389,101 @@ the 8 silver positive/insufficient-evidence rows should trigger Stage C/VLM
 evidence repair.  The 43 missing-claim rows should be used to refine SRT
 retrieval/prompting before scaling to all 13,769 pairs.
 
+## Stage-C/VLM Evidence Repair Queue
+
+Evidence repair queue builder:
+
+- `src/data_quality/build_full_pair_evidence_repair_queue_v1.py`
+
+Default command from the pilot72 no-image reviews:
+
+```bash
+PYTHONPATH=src python3 -m data_quality.build_full_pair_evidence_repair_queue_v1
+```
+
+Outputs:
+
+- repair queue:
+  `data/final/repaired_v1/full_pair_evidence_repair_queue_v1_20260614.jsonl`
+- report:
+  `data/final/repaired_v1/full_pair_evidence_repair_queue_v1_20260614.report.json`
+- markdown:
+  `docs/FULL_PAIR_EVIDENCE_REPAIR_QUEUE_20260614.md`
+
+The builder selects rows where the claim has been recovered and consumer
+comments already refute the repaired claim, but product-side evidence is missing
+or `claim_evidence_relation=insufficient`.  It seeds the next prompt with the
+recovered SRT claim, keeps old labels as audit-only fields, and routes the row
+back to title/params/OCR/VLM evidence search.  It does not delete hard rows,
+convert them to negatives, or promote them into training data.
+
+Pilot72 queue summary:
+
+| item | count |
+|---|---:|
+| reviewed rows | 72 |
+| evidence-repair rows | 8 |
+| source evidence missing | 5 |
+| source evidence present but insufficient | 3 |
+| rows with detail images | 8 |
+
+This codifies the data-quality correction requested by the user: quality
+improvement means recovering the proposal-faithful claim/evidence/comment chain,
+not making AUROC easier by filtering ambiguous rows.
+
+## Remote Evidence-Repair8 VLM Audit
+
+The first Stage-C/VLM repair run used the 8 pilot72 silver-positive rows with
+detail images and `Qwen3-VL-Plus`.
+
+Outputs:
+
+- reviews:
+  `data/final/repaired_v1/full_pair_reconstruction_llm_evidence_repair8_vlm_v1_20260614.jsonl`
+- audit report:
+  `data/final/repaired_v1/full_pair_reconstruction_llm_evidence_repair8_vlm_audit_v1_20260614.report.json`
+- audit markdown:
+  `docs/FULL_PAIR_EVIDENCE_REPAIR8_VLM_AUDIT_20260614.md`
+- manual packet:
+  `data/final/repaired_v1/full_pair_manual_audit_packet_evidence_repair8_vlm_v1_20260614.csv`
+  and
+  `docs/FULL_PAIR_MANUAL_AUDIT_PACKET_EVIDENCE_REPAIR8_VLM_20260614.md`
+
+Audit summary:
+
+| state | count |
+|---|---:|
+| `main_positive_refute` | 3 |
+| `silver_refute_missing_product_evidence` | 3 |
+| `silver_refute_insufficient_product_evidence` | 2 |
+| high flags | 0 |
+| medium flags | 4 |
+
+Promotion consistency check:
+
+- stateful rows:
+  `data/final/repaired_v1/dataset_full_pair_evidence_repair8_stateful_v1_20260614.jsonl`
+- main rows:
+  `data/final/repaired_v1/dataset_full_pair_evidence_repair8_main_v1_20260614.jsonl`
+- repair/silver rows:
+  `data/final/repaired_v1/full_pair_evidence_repair8_repair_silver_v1_20260614.jsonl`
+- promotion report:
+  `data/final/repaired_v1/full_pair_evidence_repair8_promotion_v1_20260614.report.json`
+
+The promotion builder independently reproduces the audit state: 3 main positive
+rows and 5 silver/repair rows.
+
+Interpretation:
+
+- VLM repair can move some positive consumer-refute rows from silver into the
+  conservative main candidate once product-side evidence becomes source-backed.
+- The 8 rows cannot all be promoted: 5 still need product evidence or stronger
+  claim-evidence relation.
+- Subjective attributes such as visual style can remain in the consumer
+  perception task when the comment directly answers the same claim, but they
+  should be tracked as a separate mechanism slice rather than used to inflate
+  objective fact-checking claims.
+
 ## Promotion Builder
 
 Promotion builder:

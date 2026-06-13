@@ -34,6 +34,10 @@ Current full-pair artifacts:
   `src/data_quality/build_full_pair_reconstruction_queue_v1.py`
 - LLM/VLM runner:
   `src/data_quality/llm_full_pair_reconstruct_v1.py`
+- Stage-C/VLM evidence repair queue:
+  `docs/FULL_PAIR_EVIDENCE_REPAIR_QUEUE_20260614.md`
+- evidence-repair8 VLM audit:
+  `docs/FULL_PAIR_EVIDENCE_REPAIR8_VLM_AUDIT_20260614.md`
 
 Queue summary:
 
@@ -66,6 +70,24 @@ Stratified LLM pilot queue:
 
 The 72-row pilot is intentionally diagnostic: it includes 10 categories,
 58 `claim_missing` rows, and 14 `claim_present_review_needed` rows.
+
+Pilot72 no-image review and Stage-C/VLM repair:
+
+| item | count |
+|---|---:|
+| pilot72 reviews matched | 72 |
+| recovered claims | 28 |
+| conservative main candidates before VLM repair | 15 |
+| positive silver/insufficient-evidence rows routed to VLM repair | 8 |
+| evidence-repair8 rows promoted to `main_positive_refute` | 3 |
+| evidence-repair8 rows still silver/repair | 5 |
+
+The VLM repair result is encouraging but deliberately not overclaimed.  It
+shows that the earlier evidence gap is partly a Stage-C extraction problem, not
+evidence absence.  It also shows why the final benchmark must keep stateful
+promotion gates: subjective or visually grounded evidence can help the consumer
+perception task, but rows without source-backed product evidence remain outside
+the main supervised candidate.
 
 Label policy for this reset:
 
