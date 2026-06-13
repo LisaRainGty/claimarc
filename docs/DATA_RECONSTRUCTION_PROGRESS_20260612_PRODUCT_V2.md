@@ -1775,3 +1775,75 @@ Mechanism diagnostics:
   (digital/electronics, shoes/bags, sports/outdoor), which should become
   targeted robustness and error-analysis slices rather than another broad
   architecture change.
+
+## 2026-06-13 Methodology Correction: Preserve Hard Cases
+
+User correction:
+
+- Data reconstruction must not improve metrics by deleting hard but valid
+  examples.  The proposal defines the task as consumer-perception risk at the
+  `(product, attribute)` level, with claim extraction, product-evidence
+  extraction, and comment alignment as measurement states.  Difficult rows
+  should therefore be audited, weighted, masked for contrastive learning, or
+  routed to evidence/claim re-extraction, rather than silently removed from the
+  benchmark.
+
+Important inconsistency found in the original methodology notes:
+
+- Stage B2 says pairs with no recovered SRT claim should remain in the data and
+  be downweighted because they may still indicate implicit misleading risk.
+- Stage B4 says that when the anchor claim passage is empty,
+  `y_supportability` is forced to 0.
+- This conflict can turn "claim extraction failure" into a clean negative.
+  The corrected state should be `missing_or_unrecovered_claim`, with the
+  consumer signal preserved, low reliability, and a re-extraction flag.
+
+Implementation response:
+
+- Added `src/data_quality/build_stateful_mechanism_dataset_v1.py`.
+- It consumes pair-aligned mechanism review rows but never deletes rows and
+  never relabels the consumer-perception target.
+- Review outputs become explicit states:
+  - `claim_supported_by_product_evidence`
+  - `claim_contradicted_by_product_evidence`
+  - `valid_claim_but_product_evidence_insufficient`
+  - `invalid_or_weak_claim_span`
+  - `unreviewed`
+- These states drive reliability weights, contrastive anchor/negative masks,
+  and re-extraction/evidence-rerun queues.
+
+No-drop residual stateful artifact:
+
+- Dataset:
+  `data/final/repaired_v1/dataset_attrpol_hq_mechanism_repaired_softdropbad_full400_v3_raclu_residual_stateful_nodrop_v1_20260613.jsonl`
+- Report:
+  `data/final/repaired_v1/dataset_attrpol_hq_mechanism_repaired_softdropbad_full400_v3_raclu_residual_stateful_nodrop_v1_20260613.report.json`
+- Rows: 1,956 input -> 1,956 output, dropped rows = 0
+- Review rows applied: 300/300
+- State counts:
+  - unreviewed: 1,656
+  - valid claim but product evidence insufficient: 212
+  - claim supported by product evidence: 57
+  - invalid or weak claim span: 21
+  - claim contradicted by product evidence: 10
+- Re-extraction/evidence flags:
+  - evidence rerun: 227
+  - claim re-extraction: 21
+
+Learnability comparison:
+
+| view | rows | dropped | AP | AUROC | Macro-F1 | interpretation |
+|---|---:|---:|---:|---:|---:|---|
+| softdropbad full400 v3 | 1,956 | 0 | 0.8856 | 0.9529 | 0.9278 | current reviewed benchmark |
+| residual stateful no-drop v1 | 1,956 | 0 | 0.8843 | 0.9529 | 0.9277 | preserves hard cases; essentially same learnability |
+| residual conservative v1 | 1,783 | 173 | 0.9130 | 0.9535 | 0.9287 | diagnostic upper-bound; AP benefits from dropping weak-evidence rows |
+
+Decision:
+
+- `residual conservative v1` remains a diagnostic and ablation view, not the
+  final main benchmark.
+- The next mainline model run should use the no-drop stateful dataset or a
+  further evidence-recovered stateful dataset.
+- To improve results, first repair the 227 evidence-rerun rows and 21
+  claim-reextraction rows from raw data; do not treat their absence as a reason
+  to remove them from evaluation.

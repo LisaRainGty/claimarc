@@ -262,17 +262,43 @@ Current residual data finding:
 
 ## Immediate Queue
 
-1. Promote source-conditioned RACL-U+C into the formal method variant and rerun
-   confirmation diagnostics with fixed pre-registered hyperparameters:
-   score-only, source-conditioned, and selected source/full.
-2. Add a narrow robustness ablation around the mask threshold:
+1. Re-anchor the main benchmark on a no-drop stateful data view.  The
+   conservative residual dataset is useful as a diagnostic upper-bound, but it
+   drops 173 weak-evidence rows and should not be the final main result.
+   Current no-drop artifact:
+   `data/final/repaired_v1/dataset_attrpol_hq_mechanism_repaired_softdropbad_full400_v3_raclu_residual_stateful_nodrop_v1_20260613.jsonl`.
+2. Promote source-conditioned RACL-U+C into the formal method variant and rerun
+   confirmation diagnostics with fixed pre-registered hyperparameters on the
+   no-drop stateful view: score-only, source-conditioned, and selected
+   source/full.
+3. Add a narrow robustness ablation around the mask threshold:
    `(cl_c_min, cl_neg_c_min) in {(0.1,0.1), (0.2,0.2), (0.3,0.3)}` only after
    the calibration diagnostic identifies whether AP or F1 is the binding
    constraint.
-3. Use the full400/residual review states to build a formal RACL-U data artifact:
+4. Use the full400/residual review states to build a formal RACL-U data artifact:
    utility-positive support/contradiction evidence, low-utility ignore masks,
    and bad-claim exclusion, without adding an LLM at inference time.
-4. Build the paper tables around four layers: BGE-LR, base RACL-U, score-only
+5. Build the paper tables around four layers: BGE-LR, base RACL-U, score-only
    calibration, source-conditioned RACL-U+C.  Mechanism checks should emphasize
    ECE reduction, source_count/evidence_combo gains, and corrected residual
    boundary cases.
+
+## Data Validity Guardrail
+
+The data line must not treat lower difficulty as better quality.  A row can be
+removed from the main benchmark only when it is outside the task definition
+(for example, transaction-only/service-only leakage after the product-attribute
+scope is fixed).  Hard but valid rows should stay in the benchmark with one of
+three explicit states:
+
+- low-reliability consumer signal: keep label, lower `c`;
+- insufficient product evidence: keep row, mask hard contrastive role, rerun
+  Stage C evidence extraction;
+- invalid or weak claim span: keep audit row, route to Stage B re-extraction
+  before using it as a strong supervised example.
+
+This guardrail comes directly from the proposal's measurement logic:
+CLAIMARC predicts consumer-perception risk, not only objective contradiction.
+Therefore `supports` product evidence must not automatically relabel a
+consumer-risk positive as clean, and `contradicts` product evidence must not
+automatically create a risk label without aligned negative consumer signal.
