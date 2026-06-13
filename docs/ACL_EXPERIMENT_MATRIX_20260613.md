@@ -478,6 +478,19 @@ Therefore `supports` product evidence must not automatically relabel a
 consumer-risk positive as clean, and `contradicts` product evidence must not
 automatically create a risk label without aligned negative consumer signal.
 
+The full-pair reconstruction path now has a separate LLM review audit gate:
+
+- script: `src/data_quality/audit_full_pair_llm_reviews_v1.py`
+- report:
+  `data/final/repaired_v1/full_pair_reconstruction_llm_audit_v1_20260614.report.json`
+- flagged rows:
+  `data/final/repaired_v1/full_pair_reconstruction_llm_audit_flags_v1_20260614.jsonl`
+
+This gate is intentionally upstream of promotion.  It blocks schema and label
+logic errors, routes uncertain rows to silver/repair, and records
+`mechanism_contradiction_without_consumer_refute` separately from positive
+consumer-perception labels.
+
 ## 2026-06-13 Triplet-Alignment Correction
 
 The proposal-complete candidate is now audited with an explicit

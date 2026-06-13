@@ -247,6 +247,35 @@ The output is an audit artifact, not a direct training dataset.  A later
 promotion step must verify provenance, source coverage, split hygiene, and
 label-confidence calibration before building the final supervised benchmark.
 
+## LLM Review Audit Gate
+
+Review audit script:
+
+- `src/data_quality/audit_full_pair_llm_reviews_v1.py`
+
+Default command after the LLM/VLM pilot:
+
+```bash
+PYTHONPATH=src python3 -m data_quality.audit_full_pair_llm_reviews_v1 \
+  --queue data/final/repaired_v1/full_pair_llm_pilot_queue_v1_20260614.jsonl \
+  --reviews data/final/repaired_v1/full_pair_reconstruction_llm_v1_20260614.jsonl
+```
+
+Outputs:
+
+- report:
+  `data/final/repaired_v1/full_pair_reconstruction_llm_audit_v1_20260614.report.json`
+- flagged rows:
+  `data/final/repaired_v1/full_pair_reconstruction_llm_audit_flags_v1_20260614.jsonl`
+- markdown:
+  `docs/FULL_PAIR_LLM_REVIEW_AUDIT_20260614.md`
+
+This gate checks label-definition consistency rather than benchmark
+separability.  `high` flags block main promotion until rerun or manual repair;
+`medium` flags require manual sampling or silver routing.  Product evidence
+contradiction without an aligned consumer `refute` comment is explicitly marked
+as a mechanism state, not a positive label.
+
 ## Promotion Builder
 
 Promotion builder:
@@ -290,10 +319,12 @@ moderate high weight around `0.70`, not a near-gold weight.
 1. Run a P0 pilot once the remote API environment is configured, then manually
    inspect at least 30 reconstructed examples across categories and attribute
    families.
-2. Run the promotion builder after the pilot to inspect state distribution and
+2. Run the LLM review audit gate and inspect all `high` flags plus a stratified
+   sample of `medium` flags before any row enters the main benchmark.
+3. Run the promotion builder after the pilot to inspect state distribution and
    confirm that main rows have complete `(claim, product evidence,
    comment-aligned label)` provenance.
-3. Rebuild grouped train/validation/test splits by product or room before any
+4. Rebuild grouped train/validation/test splits by product or room before any
    model comparison.
-4. Re-run baseline and CLAIMARC experiments only after the new full-pair
+5. Re-run baseline and CLAIMARC experiments only after the new full-pair
    promotion artifact is created; the older 910/481 datasets remain diagnostics.
