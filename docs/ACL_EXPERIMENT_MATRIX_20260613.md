@@ -119,6 +119,24 @@ candidates and strong consumer triggers, but they still must pass exact SRT
 claim re-extraction, full joint review, audit flags, and promotion gates before
 entering the main benchmark.
 
+Full P0 strong/weak seed20 result:
+
+| item | count |
+|---|---:|
+| claim-only processed rows | 20 |
+| exact SRT claim found | 17 |
+| joint review rows | 17 |
+| joint reviewer `claim_found` | 12 |
+| main rows after identity gate | 6 |
+| silver evidence-repair rows | 4 |
+| repair missing-claim rows | 5 |
+| identity claim-value repairs | 2 |
+
+The yield is substantially better than the original stratified pilot because it
+targets strong SRT candidates with strong consumer triggers, while still using
+strict post-retrieval gates.  This is now the preferred route for scaling from
+pilot data to a paper-sized full-pair benchmark.
+
 Label policy for this reset:
 
 - old `y/c` are audit-only fields;

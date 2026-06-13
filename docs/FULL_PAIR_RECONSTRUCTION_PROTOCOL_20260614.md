@@ -536,6 +536,37 @@ come from old positive claim-aligned-negative rows, and 96 are old negatives
 with strong consumer trigger comments that were never properly compared to a
 recovered claim.
 
+The first 20 rows of this full seed batch were processed through the same
+claim-only and joint-review stages:
+
+- claim re-extract output:
+  `data/final/repaired_v1/full_pair_claim_reextract_full_p0_strongweak20_v1_20260614.jsonl`
+- joint review queue:
+  `docs/FULL_PAIR_CLAIM_REEXTRACT_FULL_P0_STRONGWEAK20_JOINT_REVIEW_QUEUE_20260614.md`
+- joint review audit:
+  `docs/FULL_PAIR_CLAIM_REEXTRACT_FULL_P0_STRONGWEAK17_NOIMG_AUDIT_20260614.md`
+- promotion report:
+  `docs/FULL_PAIR_CLAIM_REEXTRACT_FULL_P0_STRONGWEAK17_NOIMG_PROMOTION_20260614.md`
+
+Full-seed20 result:
+
+| step | count |
+|---|---:|
+| claim-only processed rows | 20 |
+| exact SRT claim found | 17 |
+| no exact SRT claim | 3 |
+| joint-review rows | 17 |
+| joint reviewer `claim_found` | 12 |
+| conservative main rows after identity gate | 6 |
+| silver evidence-repair rows | 4 |
+| repair missing-claim rows | 5 |
+| identity claim-value repairs | 2 |
+
+This batch is the first strong signal that full-scale data expansion is viable:
+the high-recall claim repair queue can recover many missing-claim rows, while
+the joint reviewer and promotion gate still reject noisy, adjacent-attribute, or
+identity-inferred claims.
+
 Claim-only re-extraction with `llm_pair_claim_reextract_v1` on these 44 rows
 found exact SRT claim candidates for 23 rows and no claim for 21 rows.  This
 confirms that the missing-claim pool mixes true source-missing rows with
