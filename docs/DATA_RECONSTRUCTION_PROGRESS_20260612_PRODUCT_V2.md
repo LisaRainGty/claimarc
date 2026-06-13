@@ -1008,3 +1008,19 @@ Active GPU run:
   disagreements (`weight=0.05`, `temp=1.5`, `conf_min=0.25`).
 - Purpose: recover AP/AUROC against BGE-LR without letting the teacher overwrite
   the RACL boundary representation.
+
+Follow-up status:
+
+- The distillation run was stopped in fold 0.  The run repeatedly emitted
+  tokenizer fork warnings after the fold-local BGE teacher was built and then
+  stalled after epoch 4.  Its validation curve was also unstable:
+  warmup ep0 was strong (val Macro-F1 0.8936, AP 0.8950), but CL epochs dropped
+  to val AP 0.7639/0.7782 at ep3/ep4.
+- Decision: do not use online fold-local BGE distillation as the next main
+  model line.  If teacher guidance is used later, precompute teacher scores as
+  an offline data-QA artifact rather than building the teacher inside each
+  training fold.
+- New active run:
+  `cv_attrpol_aux_atomic_hpmerge_loww015_cap1500_bs8_s0_20260613`.
+  This uses the full hpmerge recall pool as low-weight train-only auxiliary
+  data (`weight_scale=0.15`) while keeping the CLAIMARC/RACL objective unchanged.
