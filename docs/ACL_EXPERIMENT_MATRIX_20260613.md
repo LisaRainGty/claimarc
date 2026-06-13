@@ -69,6 +69,32 @@ P0 LLM/VLM completion pilot on the prompt-ready queue:
   drifted to a neighboring attribute.  Promotion must therefore require a
   separate claim-attribute validation gate before any row enters the main
   supervised benchmark.
+- Triplet-alignment P0 verifier outputs have been split into second-stage
+  repair queues:
+  `data/final/repaired_v1/proposal_second_stage_repair_queues_v1_20260613/`.
+  Counts are product-evidence refresh 52, full-SRT claim re-extraction 12,
+  joint raw rescan 48, and manual/silver review 28.  These queues preserve the
+  proposal label and target Stage B/C provenance repair only.
+- VLM evidence coverage is a major data bottleneck: only 29/910 complete rows
+  and 19/481 triplet-aligned-plus-repair rows have non-empty VLM evidence,
+  despite abundant raw detail images.  The next data expansion should rerun
+  attribute-targeted detail-image evidence extraction for repair rows before
+  treating evidence absence as factual absence.
+
+481-row triplet-aligned-plus-P0-repair fold-0 sanity check:
+
+| setting | AP | AUROC | Macro-F1 | wF1 | interpretation |
+|---|---:|---:|---:|---:|---|
+| CLAIMARC PCLS | 0.7102 | 0.7720 | 0.6505 | 0.6220 | AP above BGE, but threshold/ranking stability weak |
+| CLAIMARC selectiveRKC | 0.7035 | 0.7593 | 0.6711 | 0.6292 | retrieval head helps F1 slightly but remains below BGE |
+| BGE-LR | 0.6749 | 0.7953 | 0.6932 | 0.6624 | still stronger on AUROC/F1 |
+
+`lambda_cl=0` selected the same early checkpoint as default RACL on this fold,
+so this run is not valid evidence that RACL helps or hurts.  It is a diagnostic
+signal that the current 481-row pool is too small and too sparse in same-attribute
+opposite-label neighbors for stable contrastive training.  The next paper-scale
+experiment should follow the proposal-faithful repair queues rather than
+optimizing this interim benchmark.
 
 The previous `softdropbad`, `residual conservative`, and source-conditioned
 RACL-U+C results are retained as diagnostic upper bounds and mechanism probes

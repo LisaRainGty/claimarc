@@ -265,3 +265,34 @@ Interpretation: adding provenance-preserving repaired positives improves
 ranking signal (AUPRC) without creating suspiciously high AUROC.  The next
 scale-up step is to run the same conservative verifier over P1 and to improve
 claim/evidence retrieval for the 110 P0 rows still marked `rerun_more_evidence`.
+
+## Second-Stage Repair Queues
+
+`src/data_quality/build_proposal_second_stage_repair_queues_v1.py` splits the
+140 P0 verifier outputs into targeted Stage B/C repair queues.  This is a data
+provenance step only: it preserves proposal `y/c`, does not delete hard valid
+rows, and sends changed propositions back to B4 label rebuilding instead of
+silently relabeling them.
+
+- output directory:
+  `data/final/repaired_v1/proposal_second_stage_repair_queues_v1_20260613/`
+- product-evidence refresh: 52 rows
+- full-SRT claim re-extraction: 12 rows
+- joint raw-material rescan: 48 rows
+- manual or silver review: 28 rows
+
+The split exposes the current upstream bottleneck more clearly than a single
+mixed prompt:
+
+- `claim_only` rows need target-attribute product evidence from title, params,
+  OCR, and detail-image VLM.
+- `evidence_only` rows need full-SRT claim re-extraction and, if the recovered
+  proposition changes, B4 comment-claim label rebuilding.
+- `insufficient` rows should rerun both Stage B and Stage C from raw material.
+
+Additional data audit: VLM evidence is severely under-covered relative to the
+proposal design.  In the 910 complete rows, only 29 rows have non-empty VLM
+evidence; in the 481 triplet-aligned-plus-repair view, only 19 rows do.  Since
+raw product images are abundant, the next data pass should improve C4
+attribute-targeted detail-image evidence extraction rather than treating the
+absence of VLM evidence as a true product fact.
