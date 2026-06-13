@@ -227,3 +227,52 @@ Current design consequence:
 - Treat `hardclean + candidate hpmerge` and value-gated rows as recall pools.
 - Admit additional rows only through structured filters: teacher agreement,
   source coverage, positive-boundary preservation, and per-attribute/label caps.
+
+## 2026-06-13 Addendum: 2026 Retrieval Feedback and Ad Localization
+
+Additional sources checked on 2026-06-13:
+
+- KG-CRAFT: Knowledge Graph-based Contrastive Reasoning with LLMs for Claim
+  Verification (EACL 2026): https://aclanthology.org/2026.eacl-long.302.pdf
+- Test-time Corpus Feedback: From Retrieval to RAG (Findings EACL 2026):
+  https://aclanthology.org/2026.findings-eacl.298.pdf
+- RAVEN++: Pinpointing Fine-Grained Violations in Advertisement Videos with
+  Active Reinforcement Reasoning (EMNLP Industry 2025):
+  https://aclanthology.org/2025.emnlp-industry.1.pdf
+- LiveAMR / Chinese Morph Resolution in E-commerce Live Streaming Scenarios
+  (NAACL Industry 2025): https://aclanthology.org/2025.naacl-industry.32.pdf
+- Face the Facts! Evaluating RAG-based Pipelines for Professional Fact-Checking
+  (INLG 2025): https://aclanthology.org/2025.inlg-main.50.pdf
+
+Implications after the current hardclean OOF diagnosis:
+
+- 2026 retrieval-feedback work supports iterative evidence acquisition and
+  verifier feedback, but the high-cost agent loop is best used offline for
+  repairing claim/evidence coverage.  The submitted verifier should stay
+  compact and deterministic at inference time.
+- KG-style contrastive reasoning reinforces the value of structured neighbor
+  constraints.  In CLAIMARC, the structure is attribute family, evidence source,
+  exact value compatibility, and consumer-signal confidence rather than a
+  general open-domain knowledge graph.
+- RAVEN++ supports fine-grained violation localization and difficulty-aware
+  curricula, but its RL stack is heavier than needed here.  A publishable
+  transfer is a targeted repair/curriculum queue built from OOF failures:
+  high-confidence false positives, exact-value rows, and source-specific
+  failures.
+- LiveAMR supports the domain premise that live-commerce false advertising
+  needs domain-specific reconstruction of noisy live speech.  For CLAIMARC, the
+  analogous contribution is claim span normalization plus raw product-evidence
+  recovery, not generic sentiment or morph classification.
+- Professional fact-checking RAG evaluations emphasize that verdict quality is
+  bounded by evidence sufficiency.  This matches our OOF mechanism finding:
+  CLAIMARC helps when two evidence sources are available, but fails on generic
+  OCR/title-like evidence and exact-parameter compatibility cases.
+
+Resulting next step:
+
+- Run LLM/VLM review only on the mechanism-driven repair queue, withholding
+  current labels and model predictions.
+- Convert the review into deterministic data actions: bad claim span drop,
+  exact-value contradiction/support repair, evidence recovery rerun, or
+  consumer-signal review.
+- Then rerun a small fold-0 screen before committing to a full grouped-CV run.
