@@ -94,7 +94,11 @@ def load_or_encode(args, recs: list[dict]) -> tuple[np.ndarray, np.ndarray]:
 
     from sentence_transformers import SentenceTransformer
 
-    model = SentenceTransformer(args.model_name, device=args.device, trust_remote_code=args.trust_remote_code)
+    try:
+        model = SentenceTransformer(args.model_name, device=args.device, trust_remote_code=args.trust_remote_code)
+    except TypeError:
+        # Older sentence-transformers releases do not expose trust_remote_code.
+        model = SentenceTransformer(args.model_name, device=args.device)
     claims = [claim_text(r) for r in recs]
     evidence = [evidence_text(r) for r in recs]
     print(f"[encode] model={args.model_name} n={len(recs)} device={args.device}", flush=True)

@@ -135,3 +135,83 @@ Conclusion: high-quality expansion requires a three-stage repair gate:
 
 Rows that fail any gate remain repair/auxiliary candidates, not main training
 samples.
+
+## Triplet-Alignment Gate v2
+
+`src/data_quality/audit_proposal_triplet_alignment_v2.py` adds a stricter
+proposal-faithful gate on top of the 910 complete rows.  The goal is not to
+make the task easier; it checks whether the row is a natural supervised triplet:
+at least one SRT claim must be about the target attribute, and at least one
+product-side evidence item must support that same target attribute.
+
+Outputs:
+
+- audit: `data/final/repaired_v1/proposal_triplet_alignment_audit_v2_20260613.jsonl`
+- aligned training pool:
+  `data/final/repaired_v1/dataset_attrpol_proposal_triplet_aligned_v2_20260613.jsonl`
+- label-supported audit core:
+  `data/final/repaired_v1/dataset_attrpol_proposal_triplet_aligned_label_supported_v2_20260613.jsonl`
+- repair queue:
+  `data/final/repaired_v1/proposal_triplet_alignment_repair_queue_v2_20260613.jsonl`
+- markdown:
+  `docs/PROPOSAL_TRIPLET_ALIGNMENT_AUDIT_V2_20260613.md`
+
+Summary on the 910 complete rows:
+
+- triplet aligned with aligned-review-supported label: 259
+- triplet aligned with low-confidence proposal negative label: 200
+- needs repair before training: 451
+- main repair reasons: claim-attribute alignment review 320; product-evidence
+  alignment review 253; low-confidence proposal negative 444
+
+This gate caught concrete Stage B/C defects such as:
+
+- inventory/order talk being treated as a `件数` product claim;
+- isolated OCR digits being treated as product evidence;
+- price or promotion OCR snippets supporting unrelated attributes;
+- brand/model/product-name claims drifting into celebrity, store, or generic
+  product talk.
+
+Crucially, the gate did not create an easier benchmark.  Frozen BGE-LR over
+three grouped 5-fold seeds gives:
+
+| view | n | AUPRC | AUROC | Macro-F1 | wF1 |
+|---|---:|---:|---:|---:|---:|
+| complete claim/evidence main | 910 | 0.6021 | 0.8508 | 0.7685 | 0.7051 |
+| triplet-aligned pool | 459 | 0.5286 | 0.7810 | 0.7085 | 0.6626 |
+
+Interpretation: stricter alignment removes logically invalid triplets, not hard
+valid rows.  The 459-row pool is therefore only a controlled interim benchmark;
+the 451-row repair queue should be repaired from raw SRT, params, OCR, and VLM
+materials before any paper-scale final experiment.
+
+## Triplet Repair Queue v2
+
+`src/data_quality/build_triplet_alignment_repair_queue_v2.py` converts the
+451 triplet-alignment failures into prompt-ready LLM/VLM repair tasks.
+
+- queue:
+  `data/final/repaired_v1/proposal_triplet_alignment_llm_repair_queue_v2_20260613.jsonl`
+- report:
+  `data/final/repaired_v1/proposal_triplet_alignment_llm_repair_queue_v2_20260613.report.json`
+
+Queue distribution:
+
+- total: 451
+- priority: P0=140, P1=124, P2=187
+- task type: claim+evidence realignment=122; claim-attribute realignment=198;
+  product-evidence realignment=131
+- labels: positive=138, negative=313
+
+Verifier prompt evolution on the first 30 P0 rows:
+
+| verifier | keep_clean | keep_silver | rerun_more_evidence | drop | note |
+|---|---:|---:|---:|---:|---|
+| v1 broad | 8 | 0 | 19 | 3 | over-promoted related but not entailing evidence |
+| v2 strict relation | 0 | 0 | 27 | 3 | high precision but lost recoverable partial claims |
+| v3 minimal claim span | 0 | 1 | 27 | 2 | best current gate; promotes no main-training rows without exact support |
+
+The v3 rule asks the verifier to return the minimal continuous SRT substring
+that can be compared with product evidence.  Medium-confidence results become
+silver/auxiliary only.  This preserves the paper logic: expansion must come from
+better raw-material repair, not from loosening the relation label.

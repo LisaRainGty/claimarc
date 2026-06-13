@@ -371,3 +371,51 @@ CLAIMARC predicts consumer-perception risk, not only objective contradiction.
 Therefore `supports` product evidence must not automatically relabel a
 consumer-risk positive as clean, and `contradicts` product evidence must not
 automatically create a risk label without aligned negative consumer signal.
+
+## 2026-06-13 Triplet-Alignment Correction
+
+The proposal-complete candidate is now audited with an explicit
+claim-attribute-evidence gate:
+
+- script: `src/data_quality/audit_proposal_triplet_alignment_v2.py`
+- audit: `data/final/repaired_v1/proposal_triplet_alignment_audit_v2_20260613.jsonl`
+- aligned pool: `data/final/repaired_v1/dataset_attrpol_proposal_triplet_aligned_v2_20260613.jsonl`
+- repair queue:
+  `data/final/repaired_v1/proposal_triplet_alignment_repair_queue_v2_20260613.jsonl`
+
+This gate preserves the proposal labels and sample weights.  It does not drop
+rows for being difficult; it sends rows back to Stage B/C repair when the claim
+or product evidence is not actually about the target attribute.  On the 910
+complete rows, 459 pass the triplet gate and 451 require repair.
+
+The new diagnostic baseline confirms that this is not an over-cleaning route:
+
+| view | n | AUPRC | AUROC | Macro-F1 | wF1 |
+|---|---:|---:|---:|---:|---:|
+| complete claim/evidence main | 910 | 0.6021 | 0.8508 | 0.7685 | 0.7051 |
+| triplet-aligned pool | 459 | 0.5286 | 0.7810 | 0.7085 | 0.6626 |
+
+Research implication: the final ACL/EMNLP/AAAI experiment should not use the
+459-row pool as the final dataset.  It should use it as a controlled sanity
+benchmark while repairing the 451 rows from raw materials and continuing the
+larger P0/P1 completion path.  Any future high AUROC result must be checked
+against this gate to ensure it is not caused by deleting ambiguous but valid
+consumer-perception samples.
+
+The first triplet-repair pilot confirms that expansion should be conservative:
+
+- prompt-ready repair queue:
+  `data/final/repaired_v1/proposal_triplet_alignment_llm_repair_queue_v2_20260613.jsonl`
+- queue size: 451 rows; P0=140, P1=124, P2=187
+- first 30 P0 rows:
+  - broad verifier v1: 8 keep_clean, but manual review showed over-promotion
+    when evidence was merely related to the same broad attribute
+  - strict verifier v2: 0 main promotions, 27 rerun_more_evidence, 3 drop
+  - minimal-span verifier v3: 0 main promotions, 1 silver, 27 rerun_more_evidence,
+    2 drop
+
+The default verifier now uses the v3 policy: return the minimal continuous SRT
+claim span, require same-attribute same-proposition support/contradiction, and
+route medium-confidence material to silver rather than main training.  This
+keeps the repair path faithful to the consumer-perception task and avoids
+manufacturing separability by broadening evidence relations.

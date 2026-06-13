@@ -195,6 +195,20 @@ def choose_images(row: dict[str, Any], max_images: int) -> list[str]:
 
 def make_prompt(row: dict[str, Any], product_ctx: str, ocr_ctx: str, srt_ctx: str, image_paths: list[str]) -> str:
     image_list = "\n".join(f"{i + 1}. {Path(p).name}" for i, p in enumerate(image_paths)) or "无"
+    triplet_issues = "；".join(str(x) for x in (row.get("triplet_issues") or [])) or "无"
+    claim_checks = json.dumps(row.get("claim_checks") or [], ensure_ascii=False)[:1600]
+    evidence_checks = json.dumps(row.get("evidence_checks") or [], ensure_ascii=False)[:1600]
+    current_evidence = json.dumps(row.get("current_evidence_preview") or [], ensure_ascii=False)[:1600]
+    triplet_rule = ""
+    if str(row.get("queue_type", "")).startswith("triplet_"):
+        triplet_rule = """
+三元组修复要求：
+- 当前记录已经有 claim/evidence/label，但审计发现 claim 或 evidence 可能不是目标属性。
+- 你需要判断并修复同属性对齐：可沿用当前 claim/evidence，也可从原始 SRT/参数/OCR/图片中替换为更正确的同属性材料。
+- 如果当前 claim 含多个命题，只返回能与商品证据比较的最小连续 SRT 原文子串；不要把未被证据支持的修饰语、价格、链接、库存一起带入 claim_text。
+- 若当前 claim 只是库存、链接、优惠、下单或其它属性话术，不要把它硬判为目标属性 claim。
+- 若当前 evidence 只是孤立数字、促销语、泛泛 OCR 文本或其它属性参数，不要把它硬判为目标属性 evidence。
+"""
     return f"""你是直播电商虚假宣传数据重生成的证据核验员。请只基于给定原始材料判断，不使用外部知识。
 
 任务类型：{row.get("queue_type")}
@@ -204,6 +218,11 @@ def make_prompt(row: dict[str, Any], product_ctx: str, ocr_ctx: str, srt_ctx: st
 属性类型：{row.get("attribute_objectivity")} / {row.get("expected_value_type")}
 风险评论样例：{row.get("risk_comment_example") or "无"}
 目标来源优先级：{", ".join(row.get("target_sources") or [])}
+当前三元组审计问题：{triplet_issues}
+当前 claim 审计：{claim_checks or "[]"}
+当前 evidence 审计：{evidence_checks or "[]"}
+当前 evidence 预览：{current_evidence or "[]"}
+{triplet_rule}
 
 主播/SRT候选片段：
 {srt_ctx or "【无SRT候选】"}
@@ -236,7 +255,18 @@ OCR候选：
   "confidence": "high|medium|low",
   "reject_reason": "若不能入训练，说明原因；否则空",
   "curation_action": "keep_clean|keep_risk|keep_silver|rerun_more_evidence|drop"
-}}"""
+}}
+
+relation_to_claim 判定口径：
+- supports_claim / contradicts_claim 必须发生在同一目标属性的具体值或命题上。
+- 如果旧 claim 过长但其中有一个最小连续子串能被证据支持或反驳，只输出这个最小子串并据此判定。
+- 只属于同一宽泛属性、但证据不能蕴含或反驳 claim 的，输出 insufficient。
+- 促销、链接、库存、价格等附带信息不得作为非价格属性的 claim。
+- medium 置信度的可用材料只能作为 keep_silver，不进入主训练集。
+主训练 promotion 口径：
+- keep_clean / keep_risk 仅用于 high confidence 且 claim 与 product evidence 均明确同属性、同命题可比较的样本。
+- 证据只是相关、泛化、孤立 OCR、或需要人工解释时，用 keep_silver 或 rerun_more_evidence。
+"""
 
 
 def clean_result(obj: dict[str, Any], row: dict[str, Any], model: str) -> dict[str, Any]:
@@ -248,6 +278,7 @@ def clean_result(obj: dict[str, Any], row: dict[str, Any], model: str) -> dict[s
         src = "none"
     claim_found = bool(obj.get("claim_found", False))
     evidence_found = bool(obj.get("evidence_found", False))
+    confidence = str(obj.get("confidence", "")).strip().lower()
     action = str(obj.get("curation_action", ""))[:40]
 
     # SRT proves the claim side only. Product evidence must come from title,
@@ -260,9 +291,9 @@ def clean_result(obj: dict[str, Any], row: dict[str, Any], model: str) -> dict[s
     if rel in {"claim_only", "evidence_only", "insufficient"}:
         action = "rerun_more_evidence" if claim_found or evidence_found else "drop"
     elif rel == "supports_claim" and src in PRODUCT_SOURCES and claim_found and evidence_found:
-        action = "keep_clean"
+        action = "keep_clean" if confidence == "high" else "keep_silver"
     elif rel == "contradicts_claim" and src in PRODUCT_SOURCES and claim_found and evidence_found:
-        action = "keep_risk"
+        action = "keep_risk" if confidence == "high" else "keep_silver"
     else:
         action = "rerun_more_evidence"
 
