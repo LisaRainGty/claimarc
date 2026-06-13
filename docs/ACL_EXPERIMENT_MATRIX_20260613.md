@@ -20,6 +20,8 @@ Current full-pair artifacts:
 
 - reconstruction protocol:
   `docs/FULL_PAIR_RECONSTRUCTION_PROTOCOL_20260614.md`
+- literature-to-design notes:
+  `docs/LITERATURE_NOTES_FULLPAIR_RACL_20260614.md`
 - full queue:
   `data/final/repaired_v1/full_pair_reconstruction_queue_v1_20260614.jsonl`
 - queue report:
