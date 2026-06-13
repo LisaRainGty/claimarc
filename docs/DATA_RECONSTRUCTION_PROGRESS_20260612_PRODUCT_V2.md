@@ -1091,6 +1091,18 @@ Contrastive-weight sweep status:
   `cv_attrpol_aux_atomic_hardclean_lcl075_w025_cap1500_bs8_s0_20260613`,
   changing only `lambda_cl` from `0.5` to `0.75`.
 
+Stronger RACL status:
+
+- `lambda_cl=0.75` stopped after fold 0:
+  - PCLS: AP 0.8689, AUROC 0.9527, Macro-F1 0.9024, wF1 0.8097
+  - selectiveRKC: AP 0.8743, AUROC 0.9543, Macro-F1 0.8897, wF1 0.8148
+  - hardclean fold-0 anchor remains higher on AP/Macro-F1/wF1:
+    PCLS AP 0.8868, Macro-F1 0.9124, wF1 0.8370; selectiveRKC AP 0.8895,
+    Macro-F1 0.9148, wF1 0.8377
+- Decision: the contrastive-weight sweep is closed for now.  The problem is no
+  longer RACL strength; the next bottleneck is exact claim/evidence/value
+  alignment in parameter-heavy rows.
+
 ## 2026-06-13 OOF Mechanism Diagnosis
 
 Files generated:
