@@ -288,6 +288,30 @@ separability.  `high` flags block main promotion until rerun or manual repair;
 contradiction without an aligned consumer `refute` comment is explicitly marked
 as a mechanism state, not a positive label.
 
+Manual audit packet:
+
+- `src/data_quality/build_full_pair_manual_audit_packet_v1.py`
+
+Default command:
+
+```bash
+PYTHONPATH=src python3 -m data_quality.build_full_pair_manual_audit_packet_v1
+```
+
+Outputs:
+
+- CSV packet:
+  `data/final/repaired_v1/full_pair_manual_audit_packet_v1_20260614.csv`
+- report:
+  `data/final/repaired_v1/full_pair_manual_audit_packet_v1_20260614.report.json`
+- markdown:
+  `docs/FULL_PAIR_MANUAL_AUDIT_PACKET_20260614.md`
+
+The packet joins queue metadata, SRT prefilter candidates, product evidence
+previews, consumer comment snippets, optional LLM reviews, and optional audit
+flags.  It is for human inspection and adjudication, not for selecting only
+easy rows.
+
 ## Promotion Builder
 
 Promotion builder:

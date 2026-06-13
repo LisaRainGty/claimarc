@@ -485,11 +485,16 @@ The full-pair reconstruction path now has a separate LLM review audit gate:
   `data/final/repaired_v1/full_pair_reconstruction_llm_audit_v1_20260614.report.json`
 - flagged rows:
   `data/final/repaired_v1/full_pair_reconstruction_llm_audit_flags_v1_20260614.jsonl`
+- manual audit packet:
+  `data/final/repaired_v1/full_pair_manual_audit_packet_v1_20260614.csv`
 
 This gate is intentionally upstream of promotion.  It blocks schema and label
 logic errors, routes uncertain rows to silver/repair, and records
 `mechanism_contradiction_without_consumer_refute` separately from positive
-consumer-perception labels.
+consumer-perception labels.  The manual packet exposes the SRT candidates,
+product evidence previews, consumer snippets, LLM review fields, and reviewer
+decision columns, so data quality is improved through traceable adjudication
+rather than deletion of hard-but-valid rows.
 
 ## 2026-06-13 Triplet-Alignment Correction
 
