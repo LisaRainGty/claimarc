@@ -946,3 +946,65 @@ Additional valuegate P0 LLM review:
   current risk label is not valid, or a risk-like comment alignment attached to
   an insufficiently concrete/unsupported claim.  They are valuable for manual
   audit and prompt repair, but not for automatic positive expansion.
+
+## 2026-06-13 Teacher-Consistent Expansion and Distillation Queue
+
+Prototype/source-confidence auxiliary result:
+
+- The source/confidence prototype auxiliary run was stopped after early folds.
+- Fold 0 underperformed the hardclean anchor on Macro-F1/wF1:
+  - prototype PCLS: AP 0.8746, AUROC 0.9524, Macro-F1 0.8982, wF1 0.8009
+  - prototype selectiveRKC: AP 0.9066, AUROC 0.9555, Macro-F1 0.8982, wF1 0.8009
+  - hardclean fold-0 anchor: PCLS AP 0.8868, AUROC 0.9523, Macro-F1 0.9124,
+    wF1 0.8370; selectiveRKC AP 0.8895, AUROC 0.9532, Macro-F1 0.9148,
+    wF1 0.8377
+- Decision: reject source/confidence prototype loss as the next main line.  It
+  can raise AP in a fold, but it suppresses the consumer-risk recall geometry
+  needed for Macro-F1/wF1.
+
+Teacher-consistent data selector:
+
+- Added `src/data_quality/build_teacher_consistent_aux_v1.py`.
+- The selector keeps `v6-clean hardclean v1` intact, then admits candidate
+  rows only if an out-of-fold char-TFIDF teacher agrees with the label and the
+  row passes source-coverage gates.  New rows are capped per
+  `(attribute_id, label)` block to avoid color/size dominance.
+- Main run on `hardclean + candidate hpmerge`:
+  - base rows: 2,888
+  - candidate-new rows: 343
+  - accepted after teacher/source/cap: 163
+  - final rows: 3,051
+  - added labels: 152 negative, 11 positive
+  - added confidence: high 38, medium 118, low 7
+
+Learnability diagnostics:
+
+| auxiliary view | rows | added policy | AP | AUROC | Macro-F1 | decision |
+|---|---:|---|---:|---:|---:|---|
+| hardclean v1 | 2,888 | trusted anchor | 0.3740 | 0.6689 | 0.6318 | keep |
+| teacher-consistent v1 | 3,051 | strict teacher agreement | 0.4077 | 0.7076 | 0.6046 | AP/AUROC up, positives over-pruned |
+| tc pos45/neg44 | n/a | looser positive teacher | 0.3773 | 0.6635 | 0.6163 | not enough AP gain |
+| tc pos50/neg44 | n/a | medium positive teacher | 0.4047 | 0.6718 | 0.5739 | reject |
+| tc pos00c12/neg44 | n/a | c-gated positives | 0.3668 | 0.6353 | 0.5653 | reject |
+| tc pos45/neg40 | n/a | stricter negatives | 0.4081 | 0.6775 | 0.5973 | AP up, Macro too low |
+| full hpmerge | 3,274 | recall-oriented candidate merge | 0.4409 | 0.7131 | 0.5985 | useful recall pool, not clean anchor |
+
+Interpretation:
+
+- Expansion improves lexical separability (AP/AUROC) but easily weakens the
+  consumer-perception boundary reflected in Macro-F1.
+- Teacher agreement is useful for rejecting noisy negatives, but if applied
+  symmetrically it deletes positive boundary cases; this matches the theoretical
+  claim that perceived-misleading positives are often less lexically separable.
+- Next data line should not be "more rows" alone.  Use a two-pool strategy:
+  trusted hardclean rows for the main auxiliary objective, and recall-oriented
+  hpmerge rows only for ablation/teacher or low-weight auxiliary experiments.
+
+Active GPU run:
+
+- `cv_attrpol_aux_atomic_hardclean_distill005_disagree_c025_w025_cap1500_bs8_s0_20260613`
+- Change: keep hardclean auxiliary data and RACL unchanged; add fold-local
+  BGE+LR teacher distillation only on high-confidence teacher/student
+  disagreements (`weight=0.05`, `temp=1.5`, `conf_min=0.25`).
+- Purpose: recover AP/AUROC against BGE-LR without letting the teacher overwrite
+  the RACL boundary representation.

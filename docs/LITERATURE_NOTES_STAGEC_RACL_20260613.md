@@ -189,3 +189,41 @@ Method implication after our hard-negative ablations:
 - Multi-agent retrieval should remain an offline reconstruction protocol: use it
   to improve raw-data evidence coverage and adjudicate suspicious rows, while the
   submitted model remains an end-to-end attribute-grounded RACL verifier.
+
+## 2026-06-13 Addendum: Fine-Grained Verification and Data Quality
+
+Additional sources checked on 2026-06-13:
+
+- FactLens: Benchmarking Fine-Grained Fact Verification (Findings ACL 2025):
+  https://aclanthology.org/2025.findings-acl.929/
+- LogiCoL: Logically-Informed Contrastive Learning for Set-based Dense
+  Retrieval (EMNLP 2025): https://aclanthology.org/2025.emnlp-main.608/
+- Can External Validation Tools Improve Annotation Quality for LLM-as-a-Judge?
+  (ACL 2025): https://aclanthology.org/2025.acl-long.779/
+- Structure Trumps Size: Rethinking Data Quality for LLM Reasoning (Findings
+  EMNLP 2025): https://aclanthology.org/2025.findings-emnlp.616/
+
+Implications for CLAIMARC:
+
+- FactLens supports the paper's move from coarse product-level labels to
+  fine-grained claim/evidence units.  For our data, the analogous quality
+  criterion is whether a short live-stream claim is supported by an exact
+  product evidence span and a specific consumer-response signal.
+- LogiCoL supports constrained contrastive geometry.  In CLAIMARC, the useful
+  constraint is not generic logic over entities but attribute-, source-, and
+  label-conditioned neighbor sets.  This favors soft reliability constraints
+  over brittle hard-negative filtering.
+- External-validation work supports using independent tools/teachers to audit
+  LLM-generated labels.  In this project, a fold-local text/BGE teacher should
+  be used as a data-QA signal, not as the sole ground truth.
+- Structure-over-size evidence argues against expanding the auxiliary set simply
+  past 3,000 rows.  The expansion has to preserve positive boundary samples,
+  source coverage, and per-attribute balance; otherwise the extra rows improve
+  AP-like lexical separability while weakening Macro-F1 on consumer-risk labels.
+
+Current design consequence:
+
+- Keep `hardclean v1` as the trusted auxiliary anchor.
+- Treat `hardclean + candidate hpmerge` and value-gated rows as recall pools.
+- Admit additional rows only through structured filters: teacher agreement,
+  source coverage, positive-boundary preservation, and per-attribute/label caps.
