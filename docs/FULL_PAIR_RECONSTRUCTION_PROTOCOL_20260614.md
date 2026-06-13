@@ -169,6 +169,10 @@ The runner enforces `new_y` after parsing model output: even if the model emits
 `new_y=1`, the saved label is reset to `0` unless there is a recovered claim and
 at least one aligned `refute` comment judgment.
 
+The LLM/VLM prompt does not expose old `y/c`; those fields remain available only
+in downstream audit outputs.  This avoids anchoring the relabeling pass to the
+old filtered pipeline.
+
 The output is an audit artifact, not a direct training dataset.  A later
 promotion step must verify provenance, source coverage, split hygiene, and
 label-confidence calibration before building the final supervised benchmark.

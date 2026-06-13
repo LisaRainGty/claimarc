@@ -70,7 +70,7 @@ def make_prompt(row: dict[str, Any], product_ctx: str, ocr_ctx: str, srt_ctx: st
 商品类目：{row.get("category")} / {row.get("subcategory")}
 目标属性：{row.get("attribute_name")} ({row.get("attribute_id")})
 属性值类型：{row.get("expected_value_type")}
-旧 claim 状态：{row.get("claim_state")}；旧 evidence 状态：{row.get("evidence_state")}；旧标签仅供审计：y={row.get("old_y")} c={row.get("old_c")}
+旧抽取状态（仅用于定位修复任务，不用于判断标签）：claim={row.get("claim_state")}；evidence={row.get("evidence_state")}
 
 旧 claim 预览：
 {current_claim}
