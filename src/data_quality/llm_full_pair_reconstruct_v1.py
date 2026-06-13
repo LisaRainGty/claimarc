@@ -230,6 +230,37 @@ def clean_result(obj: dict[str, Any], row: dict[str, Any], model: str, max_comme
     }
 
 
+def error_result(row: dict[str, Any], res: dict[str, Any], model: str) -> dict[str, Any]:
+    return {
+        "pair_id": row.get("pair_id"),
+        "queue_type": row.get("queue_type"),
+        "priority": row.get("priority"),
+        "product_id": row.get("product_id"),
+        "category": row.get("category"),
+        "attribute_id": row.get("attribute_id"),
+        "attribute_name": row.get("attribute_name"),
+        "old_y": row.get("old_y"),
+        "old_c": row.get("old_c"),
+        "claim_found": False,
+        "claim_text": "",
+        "claim_source": "",
+        "claim_timestamp": "",
+        "product_evidence_found": False,
+        "evidence_source_type": "none",
+        "evidence_text": "",
+        "evidence_source": "",
+        "claim_evidence_relation": "insufficient",
+        "comment_judgments": [],
+        "new_y": 0,
+        "raw_new_y": None,
+        "label_basis": "LLM reconstruction failed; keep for repair, not training.",
+        "confidence": "low",
+        "action": "rerun_joint",
+        "model": model,
+        "__error__": clean(res.get("__error__"))[:300] or "unknown_error",
+    }
+
+
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--queue", default="data/final/repaired_v1/full_pair_reconstruction_queue_v1_20260614.jsonl")
@@ -318,7 +349,9 @@ def main() -> None:
 
     results = llm.run_many(todo, verify, concurrency=args.concurrency, desc="full_pair_reconstruct_v1")
     with out_path.open("a", encoding="utf-8") as f:
-        for res in results:
+        for row, res in zip(todo, results):
+            if isinstance(res, dict) and res.get("__error__") and not res.get("pair_id"):
+                res = error_result(row, res, args.model)
             f.write(json.dumps(res, ensure_ascii=False) + "\n")
 
     all_rows = list(read_jsonl(out_path))

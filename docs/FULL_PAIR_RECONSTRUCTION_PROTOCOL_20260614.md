@@ -347,6 +347,48 @@ This finding supports continuing full-pair reconstruction, but the next pass
 must keep the audit gate active and should route insufficient product evidence
 to Stage C/VLM repair rather than main training.
 
+## Remote Pilot72 No-Image Audit v3
+
+The follow-up full stratified pilot used all 72 rows from
+`full_pair_llm_pilot_queue_v1_20260614` with `--max_images 0`.  It tests whether
+SRT, title/params, OCR text, and consumer snippets are sufficient before adding
+detail-image VLM calls.
+
+Outputs:
+
+- reviews:
+  `data/final/repaired_v1/full_pair_reconstruction_llm_pilot72_noimg_v1_20260614.jsonl`
+- LLM report:
+  `data/final/repaired_v1/full_pair_reconstruction_llm_pilot72_noimg_v1_20260614.report.json`
+- audit v3 report:
+  `data/final/repaired_v1/full_pair_reconstruction_llm_pilot72_noimg_audit_v3_20260614.report.json`
+- manual packet:
+  `data/final/repaired_v1/full_pair_manual_audit_packet_pilot72_noimg_v3_20260614.csv`
+
+Audit v3 summary:
+
+- matched reviews: 72/72.
+- claim recovered: 28/72.
+- main candidates: 12 `main_positive_refute`, 3 `main_negative_support`.
+- repair/silver states: 43 `repair_missing_claim`, 5
+  `silver_refute_missing_product_evidence`, 3
+  `silver_refute_insufficient_product_evidence`, 3
+  `repair_insufficient_product_evidence`, 1 `repair_missing_evidence`, 1
+  `lowinfo_no_aligned_comment`, and 1 `llm_error`.
+- audit flags: 1 high `llm_error`, 9 medium flags.  The medium flags mostly
+  identify positive consumer refute comments without sufficient product-side
+  evidence, or claim spans not found in the deterministic top SRT prefilter.
+
+Engineering correction from this pilot: anonymous LLM parse failures are now
+converted into pair-aware `llm_error` rows, preserving auditability and avoiding
+unmatched reviews.
+
+Next expansion rule: do not promote the 20 positive labels directly.  Only the
+15 main candidates can seed the supervised candidate view after manual sampling;
+the 8 silver positive/insufficient-evidence rows should trigger Stage C/VLM
+evidence repair.  The 43 missing-claim rows should be used to refine SRT
+retrieval/prompting before scaling to all 13,769 pairs.
+
 ## Promotion Builder
 
 Promotion builder:

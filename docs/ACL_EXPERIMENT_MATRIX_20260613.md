@@ -513,6 +513,25 @@ case: one row had consumer refute comments but `claim_evidence_relation` was
 confirms the data line is enforcing claim-evidence-comment alignment rather
 than making the AUROC task cleaner by deletion.
 
+Remote pilot72 no-image audit v3:
+
+- reviews:
+  `data/final/repaired_v1/full_pair_reconstruction_llm_pilot72_noimg_v1_20260614.jsonl`
+- audit:
+  `data/final/repaired_v1/full_pair_reconstruction_llm_pilot72_noimg_audit_v3_20260614.report.json`
+- manual packet:
+  `data/final/repaired_v1/full_pair_manual_audit_packet_pilot72_noimg_v3_20260614.csv`
+
+Result: 72/72 matched reviews, 28 recovered claims, 12 main positives, 3 main
+negatives, 8 silver positives needing product-evidence repair, 43
+missing-claim repairs, and 1 pair-aware `llm_error`.  This is not yet a final
+training set.  It shows that strong/weak deterministic SRT prefiltering can
+recover useful claim-comment pairs, but text/OCR-only evidence is insufficient
+for a nontrivial set of consumer-refute positives.  The next data step is
+targeted Stage C/VLM evidence repair for silver positives plus SRT retrieval
+refinement for missing-claim rows, before scaling the same audit gate to the
+13,769 full pairs.
+
 ## 2026-06-13 Triplet-Alignment Correction
 
 The proposal-complete candidate is now audited with an explicit
