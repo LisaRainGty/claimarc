@@ -204,6 +204,23 @@ The next40 audit added four proposal-faithful gates:
   refute the streamer price claim without clear overcharge or payment-mismatch
   language.
 
+Current combined seed120 low-noise80 plus VLM status:
+
+| item | count |
+|---|---:|
+| batch-level main rows before cross-batch dedupe | 19 |
+| combined strict main rows | 18 |
+| positives / negatives | 14 / 4 |
+| duplicate claim-family groups | 1 |
+| duplicate claim-family rows demoted | 1 |
+| categories covered | 7 |
+
+This is still a data-pipeline validation set, not a training benchmark.  Its
+main value is that it proves the full raw-data reconstruction path can recover
+complete triplets while exposing exactly the failure modes that the proposal
+needs to handle: claim recall, product-evidence coverage, attribute drift,
+consumer-expectation mismatch, and cross-attribute claim duplication.
+
 Label policy for this reset:
 
 - old `y/c` are audit-only fields;

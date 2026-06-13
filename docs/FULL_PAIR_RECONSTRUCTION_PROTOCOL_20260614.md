@@ -715,6 +715,26 @@ The price gate was added after VLM surfaced a row where the streamer price was
 directly refute a price claim unless the comment clearly states overcharge,
 actual payment mismatch, or a same-promise price-protection violation.
 
+Finally, current batch-level main candidates were combined across low-noise40,
+low-noise40 VLM repair, next40, and next40 VLM repair:
+
+- combined report:
+  `docs/FULL_PAIR_SEED120_LOWNOISE80_PLUS_VLM_COMBINED_V2_20260614.md`
+
+Combined strict candidate status:
+
+| item | count |
+|---|---:|
+| batch-level main rows before cross-batch dedupe | 19 |
+| final combined main rows | 18 |
+| positives / negatives | 14 / 4 |
+| duplicate claim-family groups | 1 |
+| duplicate claim-family rows demoted | 1 |
+
+The demoted duplicate was a short overlapping `婴儿棉` claim promoted under both
+`面料材质` and `面料成分含量`; the combined view keeps the more specific
+`面料成分含量` row and preserves the other as `silver_duplicate_claim_family`.
+
 Claim-only re-extraction with `llm_pair_claim_reextract_v1` on these 44 rows
 found exact SRT claim candidates for 23 rows and no claim for 21 rows.  This
 confirms that the missing-claim pool mixes true source-missing rows with

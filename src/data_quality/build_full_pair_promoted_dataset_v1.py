@@ -505,7 +505,7 @@ def same_claim_family(a: dict[str, Any], b: dict[str, Any]) -> bool:
         return False
     ca = claim_text_norm(a)
     cb = claim_text_norm(b)
-    if len(ca) < 8 or len(cb) < 8:
+    if len(ca) < 5 or len(cb) < 5:
         return False
     short, long = (ca, cb) if len(ca) <= len(cb) else (cb, ca)
     return short in long
