@@ -37,6 +37,7 @@ COLOR_ATTR_TERMS = {"颜色", "包装颜色", "色"}
 EXPECTATION_MISMATCH_CUES = {"以为", "以爲", "没看清", "本来是买", "本来想买", "结果来一看"}
 COUNT_UNIT_CUES = {"个", "颗", "件", "瓶", "袋", "双", "盒", "片", "支", "只", "排"}
 BATTERY_CAPACITY_UNIT_CUES = {"mah", "毫安", "安时", "ah"}
+NON_TEXTILE_PRODUCT_TERMS = {"洗发", "沐浴", "含片", "豆奶", "粉条", "电池", "眼镜", "隔离霜", "脱毛仪"}
 EXHAUSTIVE_ENUM_CUES = {
     "两个颜色",
     "两种颜色",
@@ -261,11 +262,18 @@ def consumer_expectation_mismatch(queue_row: dict[str, Any], review: dict[str, A
 def attribute_semantic_drift(queue_row: dict[str, Any], review: dict[str, Any]) -> bool:
     attr = clean(queue_row.get("attribute_name")).strip("<>").lower()
     if "电池容量" not in attr:
+        if "面料" in attr:
+            title = clean(queue_row.get("product_title"))
+            return any(term in title for term in NON_TEXTILE_PRODUCT_TERMS)
         return False
     blob = (clean(review.get("claim_text")) + " " + clean(review.get("evidence_text"))).lower()
     has_count_unit = any(cue in blob for cue in COUNT_UNIT_CUES)
     has_capacity_unit = any(cue in blob for cue in BATTERY_CAPACITY_UNIT_CUES)
     return bool(has_count_unit and not has_capacity_unit)
+
+
+def conflicting_comment_relation(rel: Counter) -> bool:
+    return bool(rel.get("support", 0) > 0 and rel.get("refute", 0) > 0)
 
 
 def color_attr(queue_row: dict[str, Any]) -> bool:
@@ -359,6 +367,8 @@ def promotion_state(queue_row: dict[str, Any], review: dict[str, Any], rel: Coun
         return "silver_consumer_expectation_mismatch"
     if attribute_semantic_drift(queue_row, review):
         return "silver_attribute_semantic_drift"
+    if conflicting_comment_relation(rel):
+        return "silver_conflicting_comment_relation"
     if enumeration_claim_evidence_extra_values(queue_row, review):
         return "silver_enumeration_evidence_extra_values"
     if rel.get("refute", 0) > 0:

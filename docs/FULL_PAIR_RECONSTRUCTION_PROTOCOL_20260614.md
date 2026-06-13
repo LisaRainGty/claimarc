@@ -715,19 +715,47 @@ The price gate was added after VLM surfaced a row where the streamer price was
 directly refute a price claim unless the comment clearly states overcharge,
 actual payment mismatch, or a same-promise price-protection violation.
 
+The remaining 19 claim-found rows from the seed120 claim-reextract output were
+then reviewed as a high-noise rest batch:
+
+- queue:
+  `docs/FULL_PAIR_CLAIM_REEXTRACT_FULL_P0_STRONGWEAK120_REST19_JOINT_REVIEW_QUEUE_20260614.md`
+- audit v2:
+  `docs/FULL_PAIR_CLAIM_REEXTRACT_FULL_P0_STRONGWEAK120_REST19_NOIMG_AUDIT_V2_20260614.md`
+- promotion v2:
+  `docs/FULL_PAIR_CLAIM_REEXTRACT_FULL_P0_STRONGWEAK120_REST19_NOIMG_PROMOTION_V2_20260614.md`
+
+Rest19 result:
+
+| state | count |
+|---|---:|
+| reviewed rows | 19 |
+| conservative main rows | 3 |
+| `main_positive_refute` | 3 |
+| `silver_conflicting_comment_relation` | 4 |
+| `silver_refute_insufficient_product_evidence` | 3 |
+| `silver_refute_missing_product_evidence` | 2 |
+| `silver_attribute_semantic_drift` | 1 |
+| `repair_missing_claim` | 5 |
+
+This high-noise batch motivated the `silver_conflicting_comment_relation` gate:
+when aligned comments include both support and refute for the same recovered
+claim, the row remains useful for mechanism and disagreement analysis but is
+too ambiguous for the main supervised benchmark.
+
 Finally, current batch-level main candidates were combined across low-noise40,
-low-noise40 VLM repair, next40, and next40 VLM repair:
+low-noise40 VLM repair, next40, next40 VLM repair, and rest19:
 
 - combined report:
-  `docs/FULL_PAIR_SEED120_LOWNOISE80_PLUS_VLM_COMBINED_V2_20260614.md`
+  `docs/FULL_PAIR_SEED120_ALL_CLAIMFOUND_PLUS_VLM_COMBINED_20260614.md`
 
-Combined strict candidate status:
+Combined strict candidate status over all 99 seed120 claim-found rows:
 
 | item | count |
 |---|---:|
-| batch-level main rows before cross-batch dedupe | 19 |
-| final combined main rows | 18 |
-| positives / negatives | 14 / 4 |
+| batch-level main rows before cross-batch dedupe | 21 |
+| final combined main rows | 20 |
+| positives / negatives | 17 / 3 |
 | duplicate claim-family groups | 1 |
 | duplicate claim-family rows demoted | 1 |
 

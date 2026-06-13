@@ -204,13 +204,19 @@ The next40 audit added four proposal-faithful gates:
   refute the streamer price claim without clear overcharge or payment-mismatch
   language.
 
-Current combined seed120 low-noise80 plus VLM status:
+The remaining 19 high-noise claim-found rows from seed120 were also reviewed.
+They produced 3 strict main positives and exposed a new disagreement gate:
+rows whose aligned comments contain both support and refute are routed to
+`silver_conflicting_comment_relation` rather than forced into a binary label.
+
+Current combined seed120 all-claim-found plus VLM status:
 
 | item | count |
 |---|---:|
-| batch-level main rows before cross-batch dedupe | 19 |
-| combined strict main rows | 18 |
-| positives / negatives | 14 / 4 |
+| seed120 claim-found rows joint-reviewed | 99 |
+| batch-level main rows before cross-batch dedupe | 21 |
+| combined strict main rows | 20 |
+| positives / negatives | 17 / 3 |
 | duplicate claim-family groups | 1 |
 | duplicate claim-family rows demoted | 1 |
 | categories covered | 7 |
