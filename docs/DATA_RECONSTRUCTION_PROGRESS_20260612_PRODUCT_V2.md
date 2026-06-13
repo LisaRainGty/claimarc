@@ -1175,6 +1175,17 @@ Targeted repair queue:
   `data/raw/product_images/<product_id>/`, so the next LLM/VLM pass can recover
   evidence from the original product detail images instead of only the current
   compressed OCR/parameter summaries.
+- Directly taking the first 80 rows is biased: top-80 rows are all current
+  negatives and all high-confidence CLAIMARC false positives.  A balanced pilot
+  is therefore built before API review.
+- Balanced pilot builder prepared:
+  `src/data_quality/build_mechanism_repair_pilot_v1.py`.
+- Pilot output:
+  `data/final/repaired_v1/mechanism_repair_pilot80_v1_20260613.jsonl`
+  and
+  `data/final/repaired_v1/mechanism_repair_pilot80_v1_20260613.report.json`.
+  n=80, covering all 10 categories, evidence combos O/P/PO plus sparse mixed
+  cases, and 14 current positives.
 - The review prompt deliberately withholds current labels and model predictions.
   It asks only for claim quality, product-evidence relation, exact value
   alignment, likely extraction issue, and repair action.  This keeps LLM usage
@@ -1196,15 +1207,15 @@ environment:
 
 ```bash
 PYTHONPATH=src python -m data_quality.llm_review_mechanism_repair_queue_v1 \
-  --queue data/final/repaired_v1/mechanism_repair_queue_v1_20260613.jsonl \
-  --out data/final/repaired_v1/mechanism_repair_queue_v1_llm_review_20260613.jsonl \
-  --report data/final/repaired_v1/mechanism_repair_queue_v1_llm_review_20260613.report.json \
-  --model Qwen3-VL-Plus --limit 80 --concurrency 2 --max_images 4
+  --queue data/final/repaired_v1/mechanism_repair_pilot80_v1_20260613.jsonl \
+  --out data/final/repaired_v1/mechanism_repair_pilot80_v1_llm_review_20260613.jsonl \
+  --report data/final/repaired_v1/mechanism_repair_pilot80_v1_llm_review_20260613.report.json \
+  --model Qwen3-VL-Plus --limit 0 --concurrency 2 --max_images 4
 
 PYTHONPATH=src python -m data_quality.apply_mechanism_repair_reviews_v1 \
   --dataset data/final/repaired_v1/dataset_attrpol_hq_product_rawtext_llmcurated_source_recovered_v3_dropunresolved.jsonl \
-  --review data/final/repaired_v1/mechanism_repair_queue_v1_llm_review_20260613.jsonl \
-  --queue data/final/repaired_v1/mechanism_repair_queue_v1_20260613.jsonl \
+  --review data/final/repaired_v1/mechanism_repair_pilot80_v1_llm_review_20260613.jsonl \
+  --queue data/final/repaired_v1/mechanism_repair_pilot80_v1_20260613.jsonl \
   --mode conservative \
   --out data/final/repaired_v1/dataset_attrpol_hq_mechanism_repaired_conservative_v1_20260613.jsonl \
   --report data/final/repaired_v1/mechanism_repaired_conservative_v1_20260613.report.json
