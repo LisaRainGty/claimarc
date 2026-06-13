@@ -26,6 +26,8 @@ Current full-pair artifacts:
   `data/final/repaired_v1/full_pair_reconstruction_queue_v1_20260614.jsonl`
 - queue report:
   `data/final/repaired_v1/full_pair_reconstruction_queue_v1_20260614.report.json`
+- SRT claim prefilter:
+  `docs/FULL_PAIR_CLAIM_SRT_PREFILTER_20260614.md`
 - builder:
   `src/data_quality/build_full_pair_reconstruction_queue_v1.py`
 - LLM/VLM runner:
@@ -41,6 +43,15 @@ Queue summary:
 | claim re-extract + label rebuild | 1,918 |
 | evidence refresh + label rebuild | 1,117 |
 | label rebuild on existing triplet | 340 |
+
+SRT prefilter result over claim-missing/review rows:
+
+| state | count |
+|---|---:|
+| strong candidate | 3,322 |
+| weak candidate | 6,769 |
+| very weak candidate | 2,141 |
+| no candidate | 80 |
 
 Label policy for this reset:
 

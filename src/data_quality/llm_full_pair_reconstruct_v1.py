@@ -54,6 +54,39 @@ def comments_block(row: dict[str, Any], max_comments: int) -> str:
     return "\n".join(lines) or "无属性级评论片段"
 
 
+def load_prefilter(path: str | Path) -> dict[str, dict[str, Any]]:
+    path = Path(path)
+    if not path.exists():
+        return {}
+    out: dict[str, dict[str, Any]] = {}
+    for row in read_jsonl(path):
+        pid = clean(row.get("pair_id"))
+        if pid:
+            out[pid] = row
+    return out
+
+
+def prefilter_srt_context(row: dict[str, Any], prefilter: dict[str, dict[str, Any]], max_candidates: int) -> str:
+    item = prefilter.get(clean(row.get("pair_id")))
+    if not item:
+        return ""
+    lines = []
+    for i, cand in enumerate((item.get("claim_candidates") or [])[:max_candidates], 1):
+        why = cand.get("why") or {}
+        hits = []
+        for key in ("attribute_hits", "value_hits", "comment_hits"):
+            vals = [clean(x) for x in (why.get(key) or []) if clean(x)]
+            if vals:
+                hits.append(f"{key}={','.join(vals[:6])}")
+        lines.append(
+            f"[prefilter_srt #{i} score={cand.get('score')} "
+            f"{Path(clean(cand.get('srt_file'))).name} "
+            f"{clean(cand.get('start_ts'))}-{clean(cand.get('end_ts'))} "
+            f"{'; '.join(hits)}] {clean(cand.get('text'))}"
+        )
+    return "\n".join(lines)[:3600]
+
+
 def make_prompt(row: dict[str, Any], product_ctx: str, ocr_ctx: str, srt_ctx: str, images: list[str], max_comments: int) -> str:
     image_list = "\n".join(f"{i + 1}. {Path(p).name}" for i, p in enumerate(images)) or "无"
     current_evidence = json.dumps(row.get("current_evidence_preview") or [], ensure_ascii=False)[:1600]
@@ -72,7 +105,7 @@ def make_prompt(row: dict[str, Any], product_ctx: str, ocr_ctx: str, srt_ctx: st
 属性值类型：{row.get("expected_value_type")}
 旧抽取状态（仅用于定位修复任务，不用于判断标签）：claim={row.get("claim_state")}；evidence={row.get("evidence_state")}
 
-旧 claim 预览：
+当前自动抽取 claim 预览（仅供核验，可替换或忽略）：
 {current_claim}
 
 主播/SRT 候选：
@@ -199,6 +232,8 @@ def main() -> None:
     ap.add_argument("--report", default="data/final/repaired_v1/full_pair_reconstruction_llm_v1_20260614.report.json")
     ap.add_argument("--priority", default="P0")
     ap.add_argument("--queue_type", default="")
+    ap.add_argument("--srt_prefilter", default="data/final/repaired_v1/full_pair_claim_srt_prefilter_v1_20260614.jsonl")
+    ap.add_argument("--max_srt_candidates", type=int, default=6)
     ap.add_argument("--limit", type=int, default=20)
     ap.add_argument("--offset", type=int, default=0)
     ap.add_argument("--max_comments", type=int, default=10)
@@ -223,11 +258,12 @@ def main() -> None:
     done = load_done(out_path)
     todo = [r for r in rows if str(r.get("pair_id")) not in done]
     bundles = pidx.build_bundles()
+    srt_prefilter = load_prefilter(args.srt_prefilter)
 
     def verify(row: dict[str, Any]) -> dict[str, Any]:
         product_ctx = product_context(row, bundles)
         ocr_ctx = ocr_context(row, max_lines=18)
-        srt_ctx = srt_context(row, max_lines=24)
+        srt_ctx = prefilter_srt_context(row, srt_prefilter, args.max_srt_candidates) or srt_context(row, max_lines=24)
         image_paths = choose_images(row, args.max_images)
         data_urls = [u for p in image_paths if (u := llm.encode_image(p))]
         obj = llm.chat_json(

@@ -115,6 +115,39 @@ This audit supports the reset: many rows are not clean negatives; they are
 measurement states where consumer comments may explicitly refer to the streamer
 claim, but upstream claim/evidence extraction failed or drifted.
 
+## SRT Claim Prefilter
+
+SRT prefilter builder:
+
+- `src/data_quality/build_srt_claim_prefilter_v1.py`
+
+Outputs:
+
+- candidate file:
+  `data/final/repaired_v1/full_pair_claim_srt_prefilter_v1_20260614.jsonl`
+- report:
+  `data/final/repaired_v1/full_pair_claim_srt_prefilter_v1_20260614.report.json`
+- markdown:
+  `docs/FULL_PAIR_CLAIM_SRT_PREFILTER_20260614.md`
+
+Coverage over the 12,312 rows needing claim repair or claim review:
+
+| state | count |
+|---|---:|
+| strong SRT candidate | 3,322 |
+| weak SRT candidate | 6,769 |
+| very weak SRT candidate | 2,141 |
+| no SRT candidate | 80 |
+
+Among the 10,666 rows previously marked `claim_missing`, only 77 have no
+deterministic SRT candidate.  This strongly suggests the old claim extraction
+pipeline mostly failed at recall/alignment rather than because the raw
+livestream material lacked relevant claim text.
+
+The LLM/VLM runner now loads this prefilter by default through
+`--srt_prefilter`, so review prompts expose ranked SRT candidates and hit
+reasons instead of relying on a shallow per-call keyword scan.
+
 ## Rebuild Rules
 
 For every pair, the LLM/VLM verifier must recover or judge:
