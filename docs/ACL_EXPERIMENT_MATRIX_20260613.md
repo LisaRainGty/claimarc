@@ -111,10 +111,21 @@ Completed negative ablations:
 
 Active:
 
-- No GPU model sweep is active.  Targeted data repair from the mechanism queue
-  has completed a reviewed pilot80 and passed the lightweight learnability
-  gate.  The next active line is a `--max_folds 1` CLAIMARC fold-0 screen on
-  `dataset_attrpol_hq_mechanism_repaired_conservative_v2_20260613.jsonl`.
+- Full400 pair-aligned LLM/VLM review has completed and passed audit
+  (400/400 coverage, issue_rate=0.01).  The dominant data issues are generic
+  evidence, bad claim spans, missing evidence, and value mismatch.
+- `softdropbad full400 v3` is the current best data candidate by lightweight
+  learnability (AP 0.8856, AUROC 0.9529, Macro-F1 0.9278).  It drops bad claim
+  spans but retains insufficient/not-verifiable rows with lower confidence.
+- RACL-U mask (`cl_c_min=0.2`, `cl_neg_c_min=0.2`) is the current best model
+  pilot.  On fold 0, it improves CLAIMARC from AP 0.8759 / AUROC 0.9612 /
+  Macro-F1 0.9155 to AP 0.9136 / AUROC 0.9675 / Macro-F1 0.9304.  It beats
+  BGE-LR on AP/AUROC and nearly matches Macro-F1 (BGE-LR 0.9315), while wF1
+  remains lower (0.8607 vs 0.8703).
+- `src/models/diagnose_oof_thresholds.py` formalizes saved-vs-oracle OOF
+  threshold analysis.  On the RACL-U fold-0 OOF, CLAIMARC's oracle Macro-F1 gap
+  is only +0.0027, so the remaining deficit is subgroup/source reliability
+  rather than global threshold selection.
 
 ## Robustness Experiments
 
@@ -128,6 +139,7 @@ Required robustness table:
 | source type | params / OCR / VLM / mixed | source reliability |
 | label reliability | c quantiles | sensitivity to measurement confidence |
 | threshold stability | val-macro vs prior-stable | deployment calibration |
+| OOF oracle gap | saved threshold vs oracle macro/wF1 | ranking-vs-calibration separation |
 
 ## Mechanism Checks
 
@@ -161,15 +173,39 @@ Current mechanism findings from hardclean OOF:
   parameter.  This points to a data fix: exact parameter/value alignment and
   negative claim-span veto, not more generic auxiliary rows.
 
+Current mechanism findings from mechanism-repair v2 fold-0:
+
+- CLAIMARC v2 now has stronger ranking than BGE-LR on the repaired candidate
+  (AP 0.9182 vs 0.8820), which confirms the repair queue is not noise.
+- Its deployed decision rule is still worse than BGE-LR
+  (Macro-F1 0.8688 vs 0.8892; wF1 0.7828 vs 0.7926), and switching from
+  `prior_stable` to `val_macro` does not fix it.
+- Oracle threshold diagnosis gives CLAIMARC v2 Macro-F1 0.8921, close to or
+  slightly above BGE-LR's oracle 0.8945.  The practical bottleneck is therefore
+  calibration/threshold transfer under evidence-source shifts, not pure
+  representation ranking.
+
+Current mechanism findings from softdropbad full400 v3 + RACL-U fold-0:
+
+- Full400 review shows that 219/400 queued rows need more evidence and 134/400
+  contain bad claim spans.  This validates data reconstruction as a first-class
+  contribution rather than a minor preprocessing detail.
+- Masking low-confidence rows from contrastive anchors/negatives fixes the
+  default CL instability.  CLAIMARC PCLS AP rises from 0.8759 to 0.9136 and
+  AUROC from 0.9612 to 0.9675 on the same fold/test rows.
+- Remaining error is concentrated in jewelry, shoes/bags, and confidence-
+  weighted slices.  BGE-LR still has a small wF1 advantage, so full-CV results
+  must report both ordinary and confidence-weighted classification.
+
 ## Immediate Queue
 
-1. Run CLAIMARC fold-0 screen for
-   `dataset_attrpol_hq_mechanism_repaired_conservative_v2_20260613.jsonl` with
-   the same hardclean auxiliary setting as the current anchor:
-   `aux_train_weight_scale=0.25`, cap 1,500, source0 CE/CL scales 0.5/0.25,
-   `threshold_policy=prior_stable`, `n_boot=0`, `--max_folds 1`.
-2. If fold-0 beats the hardclean fold-0 anchor on Macro-F1/wF1 without AP/AUROC
-   regression, run full grouped CV and regenerate OOF mechanism diagnostics.
-3. If fold-0 improves only simple learnability but not CLAIMARC, keep the LLM
-   reviews as a utility-label/curriculum pool and implement the minimal
-   `RACL-U` utility mask ablation.
+1. Launch full 5-fold grouped CV for `softdropbad full400 v3 + RACL-U mask`
+   with the same hardclean auxiliary setting and `cm_seeds=[0]`.
+2. If the full CV preserves the fold-0 AP/AUROC gain, rerun with paired
+   bootstrap and OOF mechanism diagnostics against BGE-LR.
+3. Add a narrow robustness ablation around the mask threshold:
+   `(cl_c_min, cl_neg_c_min) in {(0.1,0.1), (0.2,0.2), (0.3,0.3)}` only if
+   full-CV fold dispersion shows instability.
+4. Use the full400 review states to build a formal RACL-U data artifact:
+   utility-positive support/contradiction evidence, low-utility ignore masks,
+   and bad-claim exclusion, without adding an LLM at inference time.

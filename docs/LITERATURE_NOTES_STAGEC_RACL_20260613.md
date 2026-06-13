@@ -328,3 +328,55 @@ Immediate method consequence:
   3. ignore masks for bad claim spans and unverified raw-image-only evidence.
 - The paper can present the agent as an offline utility-labeling and data-QA
   loop, while the verifier remains a compact end-to-end RACL model.
+
+## 2026-06-13 Addendum: Calibration Gap After Mechanism Repair
+
+Additional sources checked on 2026-06-13:
+
+- Reliable Decision-Making via Calibration-Oriented Retrieval-Augmented
+  Generation / CalibRAG (NeurIPS 2025):
+  https://proceedings.neurips.cc/paper_files/paper/2025/file/7a03c2bf486e56d8a25e8d5bb72ff1a2-Paper-Conference.pdf
+- Training a Utility-based Retriever Through Shared Context Attribution for
+  Retrieval-Augmented Language Models / SCARLet (EMNLP 2025):
+  https://aclanthology.org/2025.emnlp-main.33/
+
+Observed CLAIMARC connection:
+
+- The mechanism-repaired candidate improves ranking but not deployed
+  classification: CLAIMARC v2 reaches AP 0.9182 / AUROC 0.9507 on fold 0, but
+  Macro-F1 is 0.8688 under the saved threshold, below BGE-LR's 0.8892.
+- OOF oracle analysis shows CLAIMARC v2 could reach Macro-F1 0.8921 with a
+  different global threshold, while BGE-LR has a much smaller oracle gap.  This
+  is exactly a retrieval-augmented calibration problem, not simply a failure of
+  representation learning.
+
+Method implication:
+
+- CalibRAG motivates adding a compact forecasting/calibration function over
+  claim, retrieved evidence, source count, evidence relation, and confidence.
+  For CLAIMARC this should be a fold-local calibration head or reliability gate,
+  not an LLM-in-the-loop inference module.
+- SCARLet motivates using LLM/VLM review states as evidence utility labels.
+  The key shift is from semantic relevance (`claim` looks similar to evidence)
+  to downstream utility (`evidence` actually supports/contradicts the consumer
+  risk decision).
+- The next architecture should therefore be `RACL-U+C`: utility-masked
+  contrastive retrieval plus a small evidence-conditioned calibration head.
+  This remains simple enough for an ACL/EMNLP-style method section and directly
+  explains the fold-0 failure mode.
+
+Empirical update:
+
+- Full400 mechanism review produced an explicit utility signal:
+  support/contradiction rows are useful evidence, while insufficient,
+  not-verifiable, generic-evidence, and bad-claim rows are low-utility for
+  contrastive alignment.
+- A minimal RACL-U pilot operationalized this without a new architecture:
+  `cl_c_min=0.2` and `cl_neg_c_min=0.2` mask low-confidence rows from
+  contrastive anchors and negatives.
+- On the same softdropbad full400 v3 fold-0 screen, this improves CLAIMARC PCLS
+  from AP 0.8759 / AUROC 0.9612 / Macro-F1 0.9155 to AP 0.9136 / AUROC 0.9675
+  / Macro-F1 0.9304.  The saved-vs-oracle Macro-F1 gap falls to 0.0027.
+- This is a compact publishable bridge between SCARLet-style utility retrieval
+  and CalibRAG-style calibration: the offline LLM/VLM agent supplies utility
+  attribution, while the submitted verifier remains a deterministic RACL model.

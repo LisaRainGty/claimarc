@@ -1403,3 +1403,127 @@ Remote GPU status:
   cu121 is incompatible with the driver, and cu113 wheel download was too slow.
 - `src/models/cv_eval.py` now supports `--max_folds` so the next GPU attempt can
   run a reproducible fold-0 screen instead of relying on manual interruption.
+
+## 2026-06-13 Addendum: Fold-0 CLAIMARC Screen on Mechanism Repair v2
+
+The conservative mechanism-repaired candidate passed the lightweight grouped
+learnability gate, but its first end-to-end CLAIMARC screen shows a more
+specific pattern: data repair improves risk ranking, while fold-local threshold
+selection remains unstable.
+
+Remote artifacts:
+
+- `data/final/cleancl/remote_results_20260613/cv_attrpol_mechrepair_v2_fold0_w025_cap1500_bs8_s0_bge_20260613.json`
+- `data/final/cleancl/remote_results_20260613/oof_attrpol_mechrepair_v2_fold0_w025_cap1500_bs8_s0_bge_20260613.npz`
+- `data/final/cleancl/remote_results_20260613/cv_attrpol_mechrepair_v2_fold0_valmacro_w025_cap1500_bs8_s0_bge_20260613.json`
+- `data/final/cleancl/remote_results_20260613/oof_attrpol_mechrepair_v2_fold0_valmacro_w025_cap1500_bs8_s0_bge_20260613.npz`
+
+Fold-0 screen, same hardclean auxiliary setting
+(`weight_scale=0.25`, cap 1,500, source0 CE/CL 0.5/0.25, `cm_seeds=[0]`):
+
+| method / threshold policy | AP | AUROC | Macro-F1 | wF1 |
+|---|---:|---:|---:|---:|
+| CLAIMARC PCLS / prior-stable | 0.9043 | 0.9485 | 0.8581 | 0.7598 |
+| CLAIMARC v2 / prior-stable | 0.9182 | 0.9507 | 0.8688 | 0.7828 |
+| BGE-LR / prior-stable | 0.8820 | 0.9486 | 0.8892 | 0.7926 |
+| CLAIMARC PCLS / val-macro | 0.9043 | 0.9485 | 0.8559 | 0.7591 |
+| CLAIMARC v2 / val-macro | 0.9182 | 0.9507 | 0.8562 | 0.7711 |
+| BGE-LR / val-macro | 0.8820 | 0.9486 | 0.8892 | 0.7926 |
+
+OOF threshold diagnosis was formalized in
+`src/models/diagnose_oof_thresholds.py`.  On the prior-stable fold-0 OOF:
+
+| method | saved Macro-F1 | oracle Macro-F1 | saved pred rate | oracle threshold |
+|---|---:|---:|---:|---:|
+| CLAIMARC v2 | 0.8688 | 0.8921 | 0.4013 | 0.76 |
+| BGE-LR | 0.8892 | 0.8945 | 0.3525 | 0.55 |
+
+Interpretation:
+
+- Mechanism repair v2 is not yet a clean replacement for the main benchmark:
+  it gives CLAIMARC the strongest AP/AUROC seen in this fold, but the deployed
+  decision threshold overpredicts positives.
+- The gap is not a simple `val_macro` switch.  CLAIMARC needs
+  evidence-conditioned calibration or utility-aware retrieval masks, especially
+  for generic OCR/title evidence and exact-parameter compatibility cases.
+- The 80-row review should be expanded before changing labels globally.  The
+  next data step is a larger pair-aligned LLM/VLM audit of the same queue,
+  followed by deterministic actions: drop bad claim spans, recover missing
+  product evidence, or convert support/contradiction states into retrieval
+  utility labels.
+
+## 2026-06-13 Addendum: Full400 Mechanism Review and RACL-U Fold-0 Pilot
+
+The pair-aligned mechanism queue was expanded from the 80-row pilot to the full
+400-row high-priority queue using the same blinded Qwen3-VL-Plus review prompt.
+The review does not see current labels or model predictions.
+
+Review artifacts:
+
+- `data/final/repaired_v1/mechanism_repair_full400_v2_llm_review_20260613.jsonl`
+- `data/final/repaired_v1/mechanism_repair_full400_v2_llm_review_batch_20260613.report.json`
+- `data/final/repaired_v1/mechanism_repair_full400_v2_llm_review_audit_20260613.json`
+
+Audit summary:
+
+- n_queue=400, n_reviews=400, unique pair_ids=400
+- errors=0
+- audit status=pass
+- coverage=1.0
+- issue_rate=0.01
+- valid reviews=396/400
+
+Full400 review distribution:
+
+| field | dominant values |
+|---|---|
+| claim_quality | clear 222, mixed 125, garbled 42, no_claim 7 |
+| relation_to_claim | insufficient 197, not_verifiable 85, contradicts 69, supports 45 |
+| value_alignment | ambiguous 132, not_applicable 124, contradiction 76, compatible 40, exact_match 24 |
+| repair_action | recover_more_evidence 219, drop_bad_claim 134, keep_relation 42 |
+| likely_issue | generic_evidence 167, value_mismatch 69, missing_evidence 66, bad_claim_span 33 |
+
+Two deterministic repair candidates were generated:
+
+| candidate | rows | y=1 | main action |
+|---|---:|---:|---|
+| conservative full400 v3 | 1,828 | 631 | drop bad claims and weak unverifiable rows |
+| softdropbad full400 v3 | 1,956 | 650 | drop bad claims; downweight insufficient/not-verifiable rows |
+
+Lightweight grouped learnability:
+
+| dataset | AP | AUROC | Macro-F1 |
+|---|---:|---:|---:|
+| hardclean main benchmark | 0.8467 | 0.9389 | 0.9071 |
+| mechanism-repaired conservative v2 | 0.8778 | 0.9462 | 0.9159 |
+| conservative full400 v3 | 0.8877 | 0.9482 | 0.9251 |
+| softdropbad full400 v3 | 0.8856 | 0.9529 | 0.9278 |
+
+Fold-0 end-to-end screen on `softdropbad full400 v3`:
+
+| setting | AP | AUROC | Macro-F1 | wF1 | note |
+|---|---:|---:|---:|---:|---|
+| default RACL | 0.8759 | 0.9612 | 0.9155 | 0.8358 | ordinary CL includes low-confidence rows |
+| RACL-U mask (`cl_c_min=0.2`, `cl_neg_c_min=0.2`) | 0.9136 | 0.9675 | 0.9304 | 0.8607 | low-utility rows masked from contrastive learning |
+| BGE-LR | 0.8726 | 0.9666 | 0.9315 | 0.8703 | same fold/test rows |
+
+OOF threshold diagnosis for RACL-U:
+
+- CLAIMARC PCLS saved Macro-F1 0.9304; oracle Macro-F1 0.9330.
+- CLAIMARC PCLS saved wF1 0.8607; oracle wF1 0.8695.
+- BGE-LR saved Macro-F1 0.9315; oracle Macro-F1 0.9374.
+- The RACL-U mask shrinks CLAIMARC's calibration gap to 0.0027 Macro-F1, down
+  from 0.0233 on the earlier conservative v2 fold-0 screen.
+
+Interpretation:
+
+- The full400 review confirms that the original raw-to-training pipeline often
+  produced learnable-looking but weakly grounded samples: generic evidence,
+  missing evidence, bad claim spans, and value mismatches dominate the repair
+  queue.
+- `softdropbad full400 v3` is the current best data candidate because it removes
+  bad claim spans without deleting too many consumer-risk boundary cases.
+- RACL-U is now the most promising model line: a simple confidence/utility mask
+  over contrastive anchors and negatives gives a large AP/AUROC gain and almost
+  closes the Macro-F1 gap to BGE-LR while preserving the retrieval-augmented
+  contrastive mechanism.
