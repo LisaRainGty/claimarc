@@ -19,6 +19,13 @@ from models.fusion_eval import (load_bundles, build_split_features, best_thr,
                                 macro, paired_bootstrap)
 
 
+def _torch_load(path):
+    try:
+        return torch.load(path, weights_only=False)
+    except TypeError:
+        return torch.load(path)
+
+
 def _rank01(x):
     order = np.argsort(x)
     ranks = np.empty_like(order, dtype=float)
@@ -80,7 +87,7 @@ def main():
         bundles = load_bundles(paths)
         _, p_cm_v, yv, _, _ = build_split_features(bundles, "val")
         _, p_cm_t, yt, ct, _ = build_split_features(bundles, "test")
-        bge = torch.load(bge_path, weights_only=False)
+        bge = _torch_load(bge_path)
         p_bge_v = np.asarray(bge["val"]["p"], float)
         p_bge_t = np.asarray(bge["test"]["p"], float)
 

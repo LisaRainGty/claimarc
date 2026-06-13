@@ -1527,3 +1527,55 @@ Interpretation:
   over contrastive anchors and negatives gives a large AP/AUROC gain and almost
   closes the Macro-F1 gap to BGE-LR while preserving the retrieval-augmented
   contrastive mechanism.
+
+## 2026-06-13 Addendum: Full 5-Fold RACL-U CV on Softdropbad Full400 v3
+
+A full 5-fold grouped CV run was completed for `softdropbad full400 v3 +
+RACL-U mask` with the same hardclean auxiliary setting, `cm_seeds=[0]`, and
+`n_boot=0` during training.  Results were then diagnosed with saved OOF
+predictions and paired/bootstrap scripts.
+
+Main artifacts:
+
+- `data/final/cleancl/remote_results_20260613/cv_attrpol_softdropbad_full400_v3_full_clc02_w025_cap1500_bs8_s0_bge_20260613.json`
+- `data/final/cleancl/remote_results_20260613/oof_attrpol_softdropbad_full400_v3_full_clc02_w025_cap1500_bs8_s0_bge_20260613.npz`
+- `data/final/cleancl/remote_results_20260613/diag_oof_thresholds_softdropbad_full400_v3_full_clc02_20260613.json`
+- `data/final/cleancl/remote_results_20260613/bootstrap_softdropbad_full400_v3_full_clc02_vs_bge_20260613.json`
+
+Full CV pooled OOF:
+
+| method | AP | AUROC | Macro-F1 | wF1 | n |
+|---|---:|---:|---:|---:|---:|
+| CLAIMARC PCLS + RACL-U | 0.8826 | 0.9500 | 0.9067 | 0.8215 | 1,956 |
+| CLAIMARC selectiveRKC + RACL-U | 0.8819 | 0.9490 | 0.9076 | 0.8221 | 1,956 |
+| CLAIMARC v2 | 0.8633 | 0.9364 | 0.8940 | 0.8070 | 1,956 |
+| BGE-LR | 0.8914 | 0.9606 | 0.9006 | 0.8143 | 1,956 |
+
+Paired bootstrap against BGE-LR:
+
+- selectiveRKC `dMacroF1=+0.0069`, 95% CI `[-0.0039, 0.0181]`
+- selectiveRKC `dWF1=+0.0077`, 95% CI `[-0.0153, 0.0318]`
+- selectiveRKC `dAP=-0.0095`, 95% CI `[-0.0325, 0.0148]`
+- selectiveRKC `dAUROC=-0.0116`, 95% CI `[-0.0186, -0.0049]`
+
+Interpretation:
+
+- The full CV confirms that RACL-U improves classification-oriented metrics
+  over BGE-LR in pooled OOF, but the gains are not yet statistically decisive.
+- BGE-LR retains a significant AUROC advantage.  This means the current result
+  is not yet strong enough for the paper's main "clearly best on all metrics"
+  table, although it is strong enough to justify RACL-U as a core mechanism.
+- Category diagnostics show CLAIMARC gains in beauty, food, smart home,
+  digital/electronics, and PO/POV/V evidence combinations, but still loses in
+  general and jewelry categories and on AP in several slices.
+
+Fold-safe hybrid diagnostic:
+
+- `data/final/cleancl/remote_results_20260613/cv_oof_blend_softdropbad_full400_v3_full_clc02_20260613.json`
+- `hybrid_valblend`: AP 0.8696, AUROC 0.9508, Macro-F1 0.9156, wF1 0.8316.
+- `hybrid_rankavg`: AP 0.8971, AUROC 0.9604, Macro-F1 0.8852, wF1 0.8026.
+
+The hybrid result suggests that CLAIMARC and BGE are complementary, but naive
+single-objective blending trades AP against Macro-F1.  The next architecture
+iteration should be a small multi-objective evidence-conditioned calibration
+head, not a larger encoder stack.

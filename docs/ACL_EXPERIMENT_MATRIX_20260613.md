@@ -122,6 +122,14 @@ Active:
   Macro-F1 0.9155 to AP 0.9136 / AUROC 0.9675 / Macro-F1 0.9304.  It beats
   BGE-LR on AP/AUROC and nearly matches Macro-F1 (BGE-LR 0.9315), while wF1
   remains lower (0.8607 vs 0.8703).
+- Full 5-fold RACL-U CV has completed.  Pooled OOF selectiveRKC improves
+  Macro-F1/wF1 over BGE-LR (0.9076/0.8221 vs 0.9006/0.8143), but the paired
+  bootstrap CI crosses zero and BGE-LR retains a significant AUROC advantage
+  (0.9606 vs 0.9490).  This is not yet the final "clearly best" result.
+- Fold-safe hybrid diagnostics show the methods are complementary:
+  `hybrid_valblend` reaches Macro-F1 0.9156 but loses AP, while
+  `hybrid_rankavg` reaches AP 0.8971 but loses Macro-F1.  The next step is
+  multi-objective, evidence-conditioned calibration.
 - `src/models/diagnose_oof_thresholds.py` formalizes saved-vs-oracle OOF
   threshold analysis.  On the RACL-U fold-0 OOF, CLAIMARC's oracle Macro-F1 gap
   is only +0.0027, so the remaining deficit is subgroup/source reliability
@@ -197,15 +205,28 @@ Current mechanism findings from softdropbad full400 v3 + RACL-U fold-0:
   weighted slices.  BGE-LR still has a small wF1 advantage, so full-CV results
   must report both ordinary and confidence-weighted classification.
 
+Current full-CV finding:
+
+- RACL-U is useful but not sufficient.  It gives the desired direction on
+  Macro-F1 and confidence-weighted F1, but the AP/AUROC gap to BGE-LR remains.
+- Slice diagnostics show CLAIMARC gains in beauty, food, smart home,
+  digital/electronics, and mixed evidence combinations, while losing in general
+  and jewelry categories.  The next repair queue should focus on those two
+  categories plus high-weight rows where BGE is correct and CLAIMARC is wrong.
+
 ## Immediate Queue
 
-1. Launch full 5-fold grouped CV for `softdropbad full400 v3 + RACL-U mask`
-   with the same hardclean auxiliary setting and `cm_seeds=[0]`.
-2. If the full CV preserves the fold-0 AP/AUROC gain, rerun with paired
-   bootstrap and OOF mechanism diagnostics against BGE-LR.
+1. Implement a small `RACL-U+C` calibration diagnostic that uses fold-local
+   validation to combine CLAIMARC and BGE with evidence/category/confidence
+   features under a multi-objective score: Macro-F1 + wF1 + AP constraint.
+2. Mine the full-CV OOF for high-impact residual rows:
+   BGE-correct / CLAIMARC-wrong in `general`, `jewelry_and_collectibles`, and
+   high-confidence weighted slices.  Send these rows to the next pair-aligned
+   LLM/VLM review batch.
 3. Add a narrow robustness ablation around the mask threshold:
-   `(cl_c_min, cl_neg_c_min) in {(0.1,0.1), (0.2,0.2), (0.3,0.3)}` only if
-   full-CV fold dispersion shows instability.
+   `(cl_c_min, cl_neg_c_min) in {(0.1,0.1), (0.2,0.2), (0.3,0.3)}` only after
+   the calibration diagnostic identifies whether AP or F1 is the binding
+   constraint.
 4. Use the full400 review states to build a formal RACL-U data artifact:
    utility-positive support/contradiction evidence, low-utility ignore masks,
    and bad-claim exclusion, without adding an LLM at inference time.
