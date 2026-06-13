@@ -1321,3 +1321,85 @@ PYTHONPATH=src python -m data_quality.apply_mechanism_repair_reviews_v1 \
 Research implication: before spending API calls or GPU time, every repair or
 expansion view must be keyed by stable IDs, not row order.  This also applies
 to future grouped-CV OOF diagnostics and auxiliary-data admission gates.
+
+## 2026-06-13 Addendum: LLM/VLM Pilot80 Review and Conservative Repair
+
+The v2 pair-aligned pilot was reviewed with Qwen3-VL-Plus.  The prompt withheld
+current labels and model scores and asked only for claim quality,
+product-evidence relation, exact value alignment, likely extraction issue, and
+repair action.
+
+Review artifacts:
+
+- `data/final/repaired_v1/mechanism_repair_pilot80_v2_llm_review_20260613.jsonl`
+- `data/final/repaired_v1/mechanism_repair_pilot80_v2_llm_review_20260613.report.json`
+- audit:
+  `data/final/repaired_v1/mechanism_repair_pilot80_v2_llm_review_audit_20260613.json`
+
+Review summary:
+
+- n=80 / errors=0
+- claim quality: clear 46, mixed 24, garbled 9, no_claim 1
+- relation: insufficient 43, not_verifiable 14, contradicts 12, supports 11
+- value alignment: ambiguous 29, not_applicable 23, contradiction 12,
+  compatible 10, exact_match 6
+- repair action: recover_more_evidence 46, drop_bad_claim 24, keep_relation 10
+- likely issues: generic_evidence 39, value_mismatch 12, missing_evidence 10,
+  none 8, plus a small tail of bad/garbled claim span and OCR/ASR noise cases
+
+Audit status:
+
+- pass
+- coverage=1.0
+- issue_rate=0.025
+- two minor issues were `relation_requires_source`: the model provided concrete
+  `key_evidence` but filled `evidence_source=none`.  The cleaner now maps this
+  state to `mixed` for future runs when `evidence_found=true` and evidence text
+  is non-empty.
+
+Conservative repair candidate:
+
+- dataset:
+  `data/final/repaired_v1/dataset_attrpol_hq_mechanism_repaired_conservative_v2_20260613.jsonl`
+- report:
+  `data/final/repaired_v1/mechanism_repaired_conservative_v2_20260613.report.json`
+- rows: 2,093 -> 2,048
+- labels: 686 positives -> 674 positives
+- touched rows: 80
+- dropped rows: 45
+- main actions:
+  - drop_bad_claim: 24
+  - drop_uncertain_weak_row: 21
+  - downweight_uncertain_row: 19
+  - strengthen_clean_supported: 7
+  - relabel_risk_to_clean_supported: 4
+
+Lightweight grouped learnability diagnostic:
+
+| dataset | AP | AUROC | Macro-F1 |
+|---|---:|---:|---:|
+| hardclean main benchmark | 0.8467 | 0.9389 | 0.9071 |
+| mechanism-repaired conservative v2 | 0.8778 | 0.9462 | 0.9159 |
+
+Interpretation:
+
+- This is the strongest data-quality signal in the current round.  The LLM/VLM
+  review confirms that many CLAIMARC high-confidence false positives are caused
+  by generic evidence, missing evidence, or bad claim spans rather than model
+  architecture alone.
+- The conservative candidate should proceed to a CLAIMARC fold-0 screen before
+  replacing the main benchmark.  Because 45/80 reviewed rows are dropped, a full
+  benchmark replacement must also report distribution shifts by category,
+  evidence source, confidence, and claim type.
+- The pilot review can also become a `RACL-U` utility-label pilot: supports and
+  contradictions define utility-positive evidence views, while insufficient and
+  not-verifiable rows define masked/ignored contrastive evidence.
+
+Remote GPU status:
+
+- The current A30 host is reachable and idle, but its driver is old
+  (470 / CUDA 11.4).  A fresh Python 3.10 environment was created, and the
+  scientific stack installed, but PyTorch CUDA installation is not yet stable:
+  cu121 is incompatible with the driver, and cu113 wheel download was too slow.
+- `src/models/cv_eval.py` now supports `--max_folds` so the next GPU attempt can
+  run a reproducible fold-0 screen instead of relying on manual interruption.

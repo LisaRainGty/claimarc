@@ -64,6 +64,8 @@ def _cache_put(key: str, namespace: str, value: Any):
 # 低层请求
 # --------------------------------------------------------------------------
 def _post(body: dict) -> dict:
+    if not config.MATPOOL_API_KEY:
+        raise RuntimeError("MATPOOL_API_KEY is not set in the process environment.")
     url = config.MATPOOL_BASE_URL.rstrip("/") + "/chat/completions"
     data = json.dumps(body).encode("utf-8")
     req = urllib.request.Request(

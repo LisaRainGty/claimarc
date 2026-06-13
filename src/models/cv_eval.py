@@ -216,6 +216,8 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--dataset", default="../data/final/dataset_verify_faithful.jsonl")
     ap.add_argument("--folds", type=int, default=5)
+    ap.add_argument("--max_folds", type=int, default=0,
+                    help="Optional early-stop screen: 0 runs all folds; N runs the first N folds.")
     ap.add_argument("--fold_seed", type=int, default=0)
     ap.add_argument("--cm_seeds", type=int, nargs="+", default=[0, 1, 2])
     ap.add_argument("--baselines", nargs="*", default=["roberta_cls", "bert_cls", "bge_lr"])
@@ -346,6 +348,8 @@ def main():
     fold_oof = np.full(len(recs), -1, dtype=int)
 
     for fi, (tr_full, te_idx) in enumerate(folds):
+        if args.max_folds > 0 and fi >= args.max_folds:
+            break
         tr_idx, va_idx = val_carve(tr_full, recs, g_all, seed=args.fold_seed * 100 + fi)
         splits = {"train": [recs[i] for i in tr_idx],
                   "val": [recs[i] for i in va_idx],
@@ -439,7 +443,8 @@ def main():
     else:
         print("=== Paired bootstrap skipped (--n_boot=0) ===", flush=True)
 
-    json.dump({"folds": args.folds, "fold_seed": args.fold_seed,
+    json.dump({"folds": args.folds, "max_folds": args.max_folds,
+               "fold_seed": args.fold_seed,
                "cm_seeds": args.cm_seeds,
                "evidence_policy": args.evidence_policy,
                "cl_teacher": {

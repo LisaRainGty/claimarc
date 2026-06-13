@@ -132,6 +132,10 @@ def clean_obj(obj: Any, row: dict[str, Any], model: str) -> dict[str, Any]:
     source = str(obj.get("evidence_source", "none"))
     if source not in VALID_SOURCE:
         source = "none"
+    evidence_found = bool(obj.get("evidence_found", False))
+    key_evidence = str(obj.get("key_evidence", ""))[:240]
+    if evidence_found and source == "none" and key_evidence.strip():
+        source = "mixed"
     action = str(obj.get("repair_action", "review_consumer_signal"))
     if action not in VALID_ACTION:
         action = "review_consumer_signal"
@@ -147,9 +151,9 @@ def clean_obj(obj: Any, row: dict[str, Any], model: str) -> dict[str, Any]:
         "claim_quality": str(obj.get("claim_quality", ""))[:32],
         "claim_type": str(obj.get("claim_type", ""))[:32],
         "key_claim": str(obj.get("key_claim", ""))[:160],
-        "evidence_found": bool(obj.get("evidence_found", False)),
+        "evidence_found": evidence_found,
         "evidence_source": source,
-        "key_evidence": str(obj.get("key_evidence", ""))[:240],
+        "key_evidence": key_evidence,
         "relation_to_claim": relation,
         "value_alignment": value,
         "likely_issue": str(obj.get("likely_issue", ""))[:64],

@@ -111,8 +111,10 @@ Completed negative ablations:
 
 Active:
 
-- No GPU model sweep is active.  The next active line is targeted data repair
-  from the mechanism queue.
+- No GPU model sweep is active.  Targeted data repair from the mechanism queue
+  has completed a reviewed pilot80 and passed the lightweight learnability
+  gate.  The next active line is a `--max_folds 1` CLAIMARC fold-0 screen on
+  `dataset_attrpol_hq_mechanism_repaired_conservative_v2_20260613.jsonl`.
 
 ## Robustness Experiments
 
@@ -161,10 +163,13 @@ Current mechanism findings from hardclean OOF:
 
 ## Immediate Queue
 
-1. Use LLM/API calls only on the mechanism repair queue: verify the extracted live claim,
-   the exact product evidence span, and whether the consumer-signal supports a
-   perceived-misleading label.
-2. Apply deterministic repair actions: bad-claim drop, exact-value relabel
-   candidate, evidence-recovery rerun, or consumer-signal review.
-3. After the repaired data improves learnability and fold-0 screen, rerun full
-   grouped CV with `n_boot=2000` and regenerate mechanism diagnostics.
+1. Run CLAIMARC fold-0 screen for
+   `dataset_attrpol_hq_mechanism_repaired_conservative_v2_20260613.jsonl` with
+   the same hardclean auxiliary setting as the current anchor:
+   `aux_train_weight_scale=0.25`, cap 1,500, source0 CE/CL scales 0.5/0.25,
+   `threshold_policy=prior_stable`, `n_boot=0`, `--max_folds 1`.
+2. If fold-0 beats the hardclean fold-0 anchor on Macro-F1/wF1 without AP/AUROC
+   regression, run full grouped CV and regenerate OOF mechanism diagnostics.
+3. If fold-0 improves only simple learnability but not CLAIMARC, keep the LLM
+   reviews as a utility-label/curriculum pool and implement the minimal
+   `RACL-U` utility mask ablation.
