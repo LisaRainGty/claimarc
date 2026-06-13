@@ -215,3 +215,53 @@ The v3 rule asks the verifier to return the minimal continuous SRT substring
 that can be compared with product evidence.  Medium-confidence results become
 silver/auxiliary only.  This preserves the paper logic: expansion must come from
 better raw-material repair, not from loosening the relation label.
+
+Full P0 v3 run:
+
+- output:
+  `data/final/repaired_v1/proposal_triplet_alignment_llm_repair_p0_v3_withlabel_20260613.jsonl`
+- rows: 140
+- actions: keep_clean=15, keep_risk=9, keep_silver=3,
+  rerun_more_evidence=110, drop=3
+- relation states: supports_claim=19, contradicts_claim=9,
+  insufficient=56, claim_only=44, evidence_only=12
+- all main promotable rows are positive-label P0 repairs under the original
+  proposal `y/c`; mean `c` is 0.3341 for keep_clean and 0.3687 for keep_risk.
+
+Examples of high-confidence recoveries:
+
+- `SHOEBAG_鞋跟高度`: claim "4公分,没有内增高" supported by OCR "跟高约4CM".
+- `BEAUTY_价格`: claim "这个款卖400多的" supported by OCR "市场价：RMB438".
+- `APPAREL_面料材质`: claim "双层海洋毛" contradicted by param "材质: 聚酯纤维".
+- `GEN_张数`: claim "一包里面是680抽" contradicted by param "张数: 240张".
+
+These 24 rows should be promoted through a provenance-preserving merge step
+only after their minimal claim spans are mapped back to original SRT segments
+and product-title evidence is represented explicitly in the evidence flow.
+
+`src/data_quality/apply_triplet_alignment_repairs_v2.py` implements this
+provenance-preserving merge.  After adding a deterministic question-like veto,
+22 high-confidence P0 repairs are promotable:
+
+- merged view:
+  `data/final/repaired_v1/dataset_attrpol_proposal_triplet_aligned_plus_p0repair_v2_20260613.jsonl`
+- promotion manifest:
+  `data/final/repaired_v1/triplet_alignment_p0repair_promoted_manifest_v2_20260613.jsonl`
+- report:
+  `data/final/repaired_v1/triplet_alignment_p0repair_promoted_v2_20260613.report.json`
+- merged size: 481 rows = 459 aligned base + 22 repaired rows
+- promoted actions: keep_clean=13, keep_risk=9
+- promoted labels: all preserve original proposal `y=1`
+- evidence sources: params=10, OCR=7, product_title=5
+
+Frozen BGE-LR grouped CV over three fold seeds:
+
+| view | n | AUPRC | AUROC | Macro-F1 | wF1 |
+|---|---:|---:|---:|---:|---:|
+| triplet-aligned pool | 459 | 0.5286 | 0.7810 | 0.7085 | 0.6626 |
+| + P0 v3 high-confidence repairs | 481 | 0.6205 | 0.8127 | 0.7074 | 0.6506 |
+
+Interpretation: adding provenance-preserving repaired positives improves
+ranking signal (AUPRC) without creating suspiciously high AUROC.  The next
+scale-up step is to run the same conservative verifier over P1 and to improve
+claim/evidence retrieval for the 110 P0 rows still marked `rerun_more_evidence`.

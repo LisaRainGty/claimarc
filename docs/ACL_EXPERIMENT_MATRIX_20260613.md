@@ -419,3 +419,40 @@ claim span, require same-attribute same-proposition support/contradiction, and
 route medium-confidence material to silver rather than main training.  This
 keeps the repair path faithful to the consumer-perception task and avoids
 manufacturing separability by broadening evidence relations.
+
+Full P0 v3 repair has completed:
+
+- output:
+  `data/final/repaired_v1/proposal_triplet_alignment_llm_repair_p0_v3_withlabel_20260613.jsonl`
+- n=140; keep_clean=15, keep_risk=9, keep_silver=3,
+  rerun_more_evidence=110, drop=3
+- relation split: supports_claim=19, contradicts_claim=9, insufficient=56,
+  claim_only=44, evidence_only=12
+
+The 24 high-confidence keep rows are candidates for a provenance-preserving
+promotion step, not yet a new benchmark.  Before training on them, the merge
+must map each minimal claim back to an original SRT segment and add product
+title as an explicit evidence source where used by the verifier.  This keeps
+CLAIMARC's dual-flow input contract intact.
+
+The provenance-preserving merge is now implemented:
+
+- script: `src/data_quality/apply_triplet_alignment_repairs_v2.py`
+- merged view:
+  `data/final/repaired_v1/dataset_attrpol_proposal_triplet_aligned_plus_p0repair_v2_20260613.jsonl`
+- size: 481 = 459 aligned base + 22 P0 high-confidence repairs
+- deterministic veto: question-like claim spans are not promoted
+- product-title evidence is represented as `evidence_params` with
+  `param_key=product_title` so existing model inputs remain explicit.
+
+Diagnostic BGE-LR over three grouped 5-fold seeds:
+
+| view | n | AUPRC | AUROC | Macro-F1 | wF1 |
+|---|---:|---:|---:|---:|---:|
+| triplet-aligned pool | 459 | 0.5286 | 0.7810 | 0.7085 | 0.6626 |
+| + P0 v3 high-confidence repairs | 481 | 0.6205 | 0.8127 | 0.7074 | 0.6506 |
+
+This is the right direction for data repair: ranking signal improves, but AUROC
+does not become implausibly high.  The next model-side run should compare
+CLAIMARC/RACL against this 481-row sanity benchmark, while the data-side run
+continues P1 repair and targeted re-extraction for P0 rerun_more_evidence rows.
