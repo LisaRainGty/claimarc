@@ -1,0 +1,191 @@
+# Literature Notes: Stage-C-Aware RACL Repair
+
+Date: 2026-06-13
+
+Purpose: translate recent fact-checking / multimodal retrieval / e-commerce
+attribute-mining work into concrete design constraints for CLAIMARC data repair
+and model tuning.
+
+## Sources Checked
+
+- RAFTS, ACL 2024:
+  <https://aclanthology.org/2024.acl-long.556/>
+- FIRE, Findings of NAACL 2025:
+  <https://aclanthology.org/2025.findings-naacl.158/>
+- CONFACT / conflicting evidence for RAG fact-checking, IJCAI 2025:
+  <https://www.ijcai.org/proceedings/2025/1073>
+- DEFAME, dynamic multimodal fact-checking:
+  <https://arxiv.org/abs/2412.10510>
+- ACL 2025 accepted paper list, e-commerce and multimodal directions:
+  <https://2025.aclweb.org/program/main_papers/>
+- EMNLP 2025 Industry accepted paper list, fine-grained advertisement
+  violation detection:
+  <https://2025.emnlp.org/program/ind_papers/>
+
+## Design Takeaways
+
+1. Retrieval is not verification.
+   RAFTS supports using evidence-conditioned supporting/refuting arguments, but
+   the current CLAIMARC diagnostics show that generated arguments only help when
+   product evidence is already sufficiently aligned.  Arguments should therefore
+   be auxiliary views, not replacements for Stage C evidence repair.
+
+2. Evidence sufficiency is source- and conflict-aware.
+   CONFACT reports that RAG fact-checking degrades under conflicting evidence and
+   benefits from explicit source credibility/background signals.  For CLAIMARC,
+   params/OCR/VLM should remain separate sources with coverage/source-type
+   features.  The VLM rerun confirms this empirically: coverage improved sharply,
+   but ungated full-data learnability did not.
+
+3. Multimodal verification should be dynamic and tool-like.
+   DEFAME uses modular multimodal experts and dynamically selects tools/search
+   depth.  CLAIMARC should mirror this in a lightweight way: numeric/identity
+   attributes use params/title/OCR first; visual/color/material attributes use
+   OCR/VLM; low-source or conflicting evidence gets downweighted or routed to a
+   sourceful auxiliary view.
+
+4. Fine-grained advertisement violation detection is moving toward localized
+   claims and active/reasoning-style violation localization.
+   EMNLP 2025 Industry lists RAVEN++ for fine-grained advertisement video
+   violations.  This reinforces the move from broad `(product, attribute)` pairs
+   to atomic claim-level evidence and consumer disagreement signals.
+
+5. E-commerce attribute research now emphasizes open-world multimodal attribute
+   mining and self-correction.
+   ACL 2025 lists work on open-world attribute mining for e-commerce products
+   with multimodal self-correction.  CLAIMARC's product-v2 schema, exact
+   source-grounded claim extraction, and Stage C reruns are aligned with that
+   direction; however, the final paper should present these as controlled data
+   states rather than opaque LLM relabeling.
+
+## Concrete CLAIMARC Decisions
+
+- Keep the core method as retrieval-augmented contrastive learning.
+- Add atomic auxiliary supervision only as train-only data with
+  room/product/pair leakage guards.
+- Use `sourceful_cov1` over the repaired params/title + OCR + VLM evidence as
+  the next auxiliary candidate:
+  `dataset_atomic_productv2_direct_strict_full_strictv2_refined_hp_paramtitle_ocrblock_vlmatomic_sourceful_cov1.jsonl`.
+- Treat the full VLM-augmented dataset as an evidence-recall view; do not use
+  ungated VLM evidence as the default full dataset because diagnostics show
+  coverage gain without full-data learnability gain.
+- Report coverage, source type, and conflict/consumer-signal states separately
+  in the paper's data section.
+
+## 2026-06-13 Addendum: Keep the Agent Offline and the Verifier Simple
+
+Additional recent fact-verification work points in a consistent direction:
+
+- FIRE-style iterative retrieval/verification improves evidence acquisition, but
+  the verification target still needs clean claim-evidence alignment.
+- RAFTS-style contrastive support/refute arguments are useful when arguments are
+  grounded in retrieved evidence; if retrieval/evidence is noisy, generated
+  rationales amplify the noise.
+- Long-context RAG systems can be competitive in shared fact-checking pipelines,
+  but they do not solve label construction or consumer-perception alignment.
+
+Implication for CLAIMARC:
+
+- The "agent" component should be presented as an offline data-reconstruction
+  and evidence-QA agent, not as a heavy inference-time multi-agent system.
+- The publishable model should stay compact: attribute-conditioned claim/evidence
+  dual flow, source-aware evidence coverage, and attribute-blocked
+  retrieval-augmented contrastive learning.
+- The newest data changes (`hardclean v1`, `P0 hp3`) should be described as
+  measurement-quality improvements: transaction shortcut removal, title-only
+  evidence downgrading, and explicit expectation-gap recovery.
+
+## 2026-06-13 Addendum: Upstream Rebuild and Minimal Agent Framing
+
+Sources rechecked on 2026-06-13:
+
+- RAFTS (ACL 2024): https://aclanthology.org/2024.acl-long.556/
+- FIRE (Findings of NAACL 2025): https://aclanthology.org/2025.findings-naacl.158/
+- Conflicting evidence in retrieval-augmented LLM fact-checking (IJCAI 2025):
+  https://www.ijcai.org/proceedings/2025/1073
+- LiveAMR for e-commerce live-streaming regulation (NAACL Industry 2025):
+  https://aclanthology.org/2025.naacl-industry.32/
+- EMNLP 2025 Industry program, including fine-grained advertisement violation
+  detection directions: https://2025.emnlp.org/program/ind_papers/
+
+Implications for the current candidate rebuild:
+
+- The task should be framed as attribute-grounded consumer-facing fact
+  verification, not generic sentiment classification.  LiveAMR supports the
+  premise that live-commerce regulation needs domain-specific claim
+  reconstruction and LLM-assisted data generation, but our contribution should
+  focus on product claim/evidence/consumer disagreement rather than morph
+  normalization.
+- FIRE motivates an iterative retrieval/checking agent, but the publishable
+  CLAIMARC model should not become an inference-time agent.  Use the agent as
+  an offline data reconstruction and evidence QA module; keep the deployed
+  architecture as retrieval-augmented contrastive learning.
+- RAFTS motivates support/refute views, but they should be generated only from
+  aligned product evidence.  In noisy rows, arguments amplify label noise, so
+  the latest hard-clean and upstream claim-veto steps are prerequisites.
+- The IJCAI 2025 conflicting-evidence result supports keeping params, title,
+  OCR, and VLM evidence as separate source channels and building hard negatives
+  from source conflicts rather than simply concatenating all evidence.
+
+Concrete next model tweak after the data line finishes:
+
+- Keep the current RACL backbone.
+- Add source-aware hard-negative sampling: negatives are sampled preferentially
+  from the same attribute family and same evidence-source/confidence bucket.
+- Add a very small source-consistency auxiliary head only if hardclean CV shows
+  that the main model still loses to BGE-LR on AP; do not add a heavy multi-agent
+  inference loop.
+
+## 2026-06-13 Addendum: Data-First Expansion After Full Candidate Rerun
+
+The completed candidate rebuild supports the same conclusion:
+
+- More raw LLM-extracted claims are not automatically better.  The candidate
+  full-rerun increases coverage but weakens AUROC/Macro-F1 when used directly,
+  especially on visual/color attributes.
+- The publishable framing should distinguish three states:
+  1. clean benchmark rows;
+  2. high-precision train-only auxiliary rows;
+  3. recall-oriented candidate rows used for offline QA and ablation.
+- Agentic LLM use is best justified as an offline evidence-QA/reconstruction
+  loop: schema contraction, exact-quote recovery, evidence-source alignment,
+  deterministic validation, and consumer-signal adjudication.
+
+Method constraint for the next model sweep:
+
+- Prefer one interpretable RACL modification at a time:
+  - source-aware hard-negative filtering (`same_evtype_conf`); or
+  - a small source/confidence prototype auxiliary.
+- Do not combine hard negatives, prototype loss, evidence-view consistency, and
+  BGE distillation in one run until each has an isolated ablation.  The paper
+  needs clean causal attribution, not a bag of tricks.
+
+## 2026-06-13 Addendum: 2025-2026 Evidence and Ad Moderation Check
+
+Additional sources checked on 2026-06-13:
+
+- Face the Facts! Evaluating RAG-based Pipelines for Professional Fact-Checking
+  (INLG 2025): https://aclanthology.org/2025.inlg-main.50/
+- Resolving Conflicting Evidence in Automated Fact-Checking (IJCAI 2025):
+  https://www.ijcai.org/proceedings/2025/1073
+- Retrieval-Augmented Generation with Conflicting Evidence (COLM 2025):
+  https://openreview.net/forum?id=z1MHB2m3V9
+- Multi-Sourced, Multi-Agent Evidence Retrieval for Fact-Checking (arXiv 2026):
+  https://arxiv.org/html/2603.00267v1
+- RAVEN++: Pinpointing Fine-Grained Violations in Advertisement Videos with
+  Active Reinforcement Reasoning (EMNLP Industry 2025):
+  https://aclanthology.org/2025.emnlp-industry.1/
+
+Method implication after our hard-negative ablations:
+
+- Recent work treats evidence reliability as a set-level/source-level property,
+  especially under conflicting or incomplete evidence.  This supports
+  source/confidence-aware prototype regularization and evidence sufficiency
+  reporting more strongly than hard filtering of negative neighbors.
+- RAVEN++ reinforces fine-grained violation localization, but its active RL stack
+  would be too heavy for CLAIMARC.  The transferable idea is curriculum/active
+  focus on difficult localized claims, which we can implement as offline data QA
+  and boundary-set evaluation rather than inference-time RL.
+- Multi-agent retrieval should remain an offline reconstruction protocol: use it
+  to improve raw-data evidence coverage and adjudicate suspicious rows, while the
+  submitted model remains an end-to-end attribute-grounded RACL verifier.

@@ -1,0 +1,57 @@
+# macOS / filesystem noise
+.DS_Store
+._*
+**/._*
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.ipynb_checkpoints/
+
+# Local environments and secrets
+.env
+.env.*
+env.sh
+*.key
+*.pem
+id_*
+
+# Large or generated project data
+data/**
+!data/
+!data/README.md
+logs/
+_server_snapshot/
+.__server_snapshot
+
+# LLM / model / experiment caches and artifacts
+cache/
+.cache/
+data/cache/
+*.pt
+*.pth
+*.ckpt
+*.safetensors
+*.onnx
+*.npz
+*.npy
+*.pkl
+*.joblib
+
+# External papers, third-party reference repos, and local downloaded corpora
+reference/
+
+# Build / package outputs
+build/
+dist/
+*.egg-info/
+
+# Editor / local tool state
+.vscode/
+.idea/
+*.swp
+*.swo
