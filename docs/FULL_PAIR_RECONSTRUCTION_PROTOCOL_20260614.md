@@ -227,6 +227,18 @@ PYTHONPATH=src python3 -m data_quality.llm_full_pair_reconstruct_v1 \
   --model Qwen3-VL-Plus
 ```
 
+One-command guarded runner:
+
+```bash
+scripts/run_full_pair_reconstruction_pilot.sh P0 72 2 Qwen3-VL-Plus \
+  data/final/repaired_v1/full_pair_llm_pilot_queue_v1_20260614.jsonl
+```
+
+The guarded runner now executes LLM reconstruction, the review audit gate, and
+promotion in sequence.  Promotion is blocked if the audit still has missing
+reviews or any `high` flags.  The default shell-script limit remains `20` for
+cheap smoke tests; use `72` for the full stratified pilot.
+
 Local non-API check:
 
 ```bash
