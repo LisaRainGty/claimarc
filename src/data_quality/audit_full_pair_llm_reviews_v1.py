@@ -52,6 +52,47 @@ PRICE_VALUE_JUDGMENT_TERMS = {"太贵", "偏贵", "不便宜", "小贵", "不值
 QUANTITY_VALUE_JUDGMENT_TERMS = {"太少", "少的可怜", "量少", "分量少", "不多", "最少也得", "应该", "应为", "不够"}
 NUMERIC_CONFLICT_CUES = {"不是", "不符", "少发", "少给", "只有", "收到少", "实付", "到手不是", "降价", "买成"}
 COMMERCIAL_PROMISE_ATTRS = {"售卖方式", "购买渠道", "广告宣传", "宣传", "活动信息"}
+COLOR_ATTR_TERMS = {"颜色", "包装颜色", "色"}
+EXHAUSTIVE_ENUM_CUES = {
+    "两个颜色",
+    "两种颜色",
+    "2个颜色",
+    "2种颜色",
+    "只有",
+    "只",
+    "一共",
+    "总共",
+    "就这",
+}
+COLOR_VALUES = {
+    "白色": "白",
+    "白底": "白",
+    "红色": "红",
+    "红底": "红",
+    "绿色": "绿",
+    "绿底": "绿",
+    "蓝色": "蓝",
+    "蓝底": "蓝",
+    "黑色": "黑",
+    "黑底": "黑",
+    "黄色": "黄",
+    "黄底": "黄",
+    "橙色": "橙",
+    "橙底": "橙",
+    "粉色": "粉",
+    "粉底": "粉",
+    "紫色": "紫",
+    "紫底": "紫",
+    "灰色": "灰",
+    "灰底": "灰",
+    "银色": "银",
+    "金色": "金",
+    "棕色": "棕",
+    "咖啡色": "咖啡",
+    "米色": "米",
+    "透明": "透明",
+    "卡其": "卡其",
+}
 
 
 def clean(value: Any) -> str:
@@ -135,6 +176,34 @@ def commercial_promise_attr(queue_row: dict[str, Any]) -> bool:
     return attr in COMMERCIAL_PROMISE_ATTRS
 
 
+def color_attr(queue_row: dict[str, Any]) -> bool:
+    attr = clean(queue_row.get("attribute_name")).strip("<>")
+    return any(term in attr for term in COLOR_ATTR_TERMS)
+
+
+def color_values(text: Any) -> set[str]:
+    blob = clean(text)
+    return {value for token, value in COLOR_VALUES.items() if token in blob}
+
+
+def exhaustive_enum_claim(text: Any) -> bool:
+    blob = clean(text)
+    return any(cue in blob for cue in EXHAUSTIVE_ENUM_CUES)
+
+
+def enumeration_claim_evidence_extra_values(queue_row: dict[str, Any], review: dict[str, Any]) -> list[str]:
+    if not color_attr(queue_row):
+        return []
+    claim_text = clean(review.get("claim_text"))
+    evidence_text = clean(review.get("evidence_text"))
+    if not exhaustive_enum_claim(claim_text):
+        return []
+    claim_vals = color_values(claim_text)
+    evidence_vals = color_values(evidence_text)
+    extra = sorted(evidence_vals - claim_vals)
+    return extra if claim_vals and evidence_vals and extra else []
+
+
 def read_reviews(path: str | Path) -> tuple[dict[str, dict[str, Any]], Counter]:
     path = Path(path)
     if not path.exists():
@@ -203,7 +272,7 @@ def comment_stats(review: dict[str, Any], max_comments: int, flags: list[dict[st
     return stats
 
 
-def promotion_state(review: dict[str, Any], rel: Counter) -> str:
+def promotion_state(queue_row: dict[str, Any], review: dict[str, Any], rel: Counter) -> str:
     if review.get("__error__"):
         return "llm_error"
     claim_found = boolish(review.get("claim_found"))
@@ -219,6 +288,8 @@ def promotion_state(review: dict[str, Any], rel: Counter) -> str:
         if rel.get("refute", 0) > 0:
             return "silver_refute_insufficient_product_evidence"
         return "repair_insufficient_product_evidence"
+    if enumeration_claim_evidence_extra_values(queue_row, review):
+        return "silver_enumeration_evidence_extra_values"
     if rel.get("refute", 0) > 0:
         return "main_positive_refute"
     if rel.get("support", 0) > 0 and rel.get("mixed", 0) == 0:
@@ -245,7 +316,7 @@ def audit_one(queue_row: dict[str, Any], review: dict[str, Any] | None) -> dict[
 
     max_comments = len(queue_row.get("consumer_mentions") or [])
     rel = comment_stats(review, max_comments, flags)
-    state = promotion_state(review, rel)
+    state = promotion_state(queue_row, review, rel)
 
     claim_found = boolish(review.get("claim_found"))
     claim_text = clean(review.get("claim_text"))
@@ -299,6 +370,15 @@ def audit_one(queue_row: dict[str, Any], review: dict[str, Any] | None) -> dict[
         add_flag(flags, severity, "numeric_value_judgment_used_as_refute", ";".join(numeric_judgments))
     if commercial_promise_attr(queue_row) and state in {"main_positive_refute", "main_negative_support"}:
         add_flag(flags, "medium", "commercial_promise_attribute_requires_manual")
+    extra_enum_values = enumeration_claim_evidence_extra_values(queue_row, review)
+    if extra_enum_values:
+        severity = "high" if action == "promote_candidate" else "medium"
+        add_flag(
+            flags,
+            severity,
+            "enumeration_claim_evidence_extra_values",
+            ",".join(extra_enum_values),
+        )
 
     expected_y = 1 if claim_found and rel.get("refute", 0) > 0 else 0
     if new_y != expected_y:

@@ -614,6 +614,44 @@ Additional guards added from this audit:
   are preserved, but main promotion requires manual or stricter same-promise
   verification; otherwise they route to `silver_commercial_promise_attribute`.
 
+The 12 low-noise40 evidence-silver rows were then routed through a detail-image
+VLM evidence repair batch:
+
+- queue:
+  `docs/FULL_PAIR_EVIDENCE_REPAIR_QUEUE_LOWNOISE40_SILVER12_20260614.md`
+- audit v2:
+  `docs/FULL_PAIR_LOWNOISE40_SILVER12_VLM_AUDIT_V2_20260614.md`
+- promotion v2:
+  `docs/FULL_PAIR_LOWNOISE40_SILVER12_VLM_PROMOTION_V2_20260614.md`
+
+After manual inspection, two further proposal-faithful promotion guards were
+added:
+
+- Enumerated-value claims, currently implemented for color/package-color
+  attributes, cannot be promoted if product-side evidence exposes additional
+  values beyond the exhaustive streamer claim.  Such rows are preserved as
+  `silver_enumeration_evidence_extra_values`.
+- Rows that share the same product, room, and recovered SRT claim are treated as
+  one claim-family for the main supervised view.  The most specific attribute
+  row is kept, and generic duplicates such as `描述` remain in the stateful view
+  as `silver_duplicate_claim_family`.
+
+Low-noise40 silver12 VLM repair after these guards:
+
+| state | count |
+|---|---:|
+| reviewed rows | 12 |
+| conservative main rows | 1 |
+| `main_positive_refute` | 1 |
+| `silver_enumeration_evidence_extra_values` | 1 |
+| `silver_duplicate_claim_family` | 1 |
+| remaining repair/silver rows | 9 |
+
+This correction is deliberately conservative.  It lowers the immediate yield
+but makes the supervised row definition match the paper's natural process:
+streamer claim, product-side evidence for that exact claim, and consumer
+comments judged against the same claim.
+
 Claim-only re-extraction with `llm_pair_claim_reextract_v1` on these 44 rows
 found exact SRT claim candidates for 23 rows and no claim for 21 rows.  This
 confirms that the missing-claim pool mixes true source-missing rows with
@@ -699,9 +737,11 @@ Promotion states:
   `silver_refute_insufficient_product_evidence`, `repair_missing_claim`,
   `repair_missing_evidence`, `repair_insufficient_product_evidence`,
   `repair_identity_claim_value`, `silver_mixed_comment_relation`, and
-  `repair_numeric_value_judgment`, `silver_commercial_promise_attribute`, and
-  `lowinfo_no_aligned_comment` remain outside the main benchmark but are
-  preserved for repair, weighting, and mechanism analysis.
+  `repair_numeric_value_judgment`, `silver_commercial_promise_attribute`,
+  `silver_enumeration_evidence_extra_values`,
+  `silver_duplicate_claim_family`, and `lowinfo_no_aligned_comment` remain
+  outside the main benchmark but are preserved for repair, weighting, and
+  mechanism analysis.
 
 The builder uses conservative reliability weights.  A single high-confidence
 LLM/VLM reconstruction with one explicit aligned refuting comment receives a

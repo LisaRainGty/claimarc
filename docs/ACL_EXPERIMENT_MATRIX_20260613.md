@@ -160,6 +160,26 @@ main candidates:
 - Commercial-promise attributes are preserved but routed to silver unless the
   same promise is directly verified.
 
+Low-noise40 silver12 Stage-C/VLM evidence repair:
+
+| item | count |
+|---|---:|
+| evidence-silver rows sent to VLM repair | 12 |
+| VLM reviews matched | 12 |
+| pre-correction apparent main promotions | 3 |
+| final conservative main rows after enum/family gates | 1 |
+| enumeration-evidence extra-value silver rows | 1 |
+| duplicate claim-family silver rows | 1 |
+| remaining repair/silver rows | 9 |
+
+This batch exposed two important data-quality failure modes that are now
+first-class gates rather than manual notes.  First, an exhaustive color claim
+cannot be promoted if product images list extra colors beyond the streamer
+enumeration.  Second, the same product-room-claim should not enter the main
+supervised view under both a specific attribute and a generic `描述` attribute.
+Both rows remain in stateful outputs for repair and mechanism analysis; they
+are not deleted as hard samples.
+
 Label policy for this reset:
 
 - old `y/c` are audit-only fields;
@@ -171,6 +191,10 @@ Label policy for this reset:
   to the repaired claim and refuting it;
 - product-evidence contradiction alone is a mechanism/evidence relation state,
   not a positive consumer-perception label.
+- exhaustive enumerated claims require product-side evidence that supports the
+  same enumerated value set, otherwise the row is silver;
+- main supervised rows are de-duplicated by product, room, and recovered claim
+  family while duplicate hard cases remain in stateful outputs.
 
 The 910-row complete candidate, the 459/481 triplet-aligned diagnostic views,
 and all over-cleaned high-AUROC experiments remain useful for error analysis and

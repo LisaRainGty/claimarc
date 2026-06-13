@@ -29,6 +29,48 @@ PRICE_VALUE_JUDGMENT_TERMS = {"太贵", "偏贵", "不便宜", "小贵", "不值
 QUANTITY_VALUE_JUDGMENT_TERMS = {"太少", "少的可怜", "量少", "分量少", "不多", "最少也得", "应该", "应为", "不够"}
 NUMERIC_CONFLICT_CUES = {"不是", "不符", "少发", "少给", "只有", "收到少", "实付", "到手不是", "降价", "买成"}
 COMMERCIAL_PROMISE_ATTRS = {"售卖方式", "购买渠道", "广告宣传", "宣传", "活动信息"}
+GENERIC_ATTRIBUTE_NAMES = {"描述", "描述相符", "商品描述", "广告宣传", "宣传"}
+COLOR_ATTR_TERMS = {"颜色", "包装颜色", "色"}
+EXHAUSTIVE_ENUM_CUES = {
+    "两个颜色",
+    "两种颜色",
+    "2个颜色",
+    "2种颜色",
+    "只有",
+    "只",
+    "一共",
+    "总共",
+    "就这",
+}
+COLOR_VALUES = {
+    "白色": "白",
+    "白底": "白",
+    "红色": "红",
+    "红底": "红",
+    "绿色": "绿",
+    "绿底": "绿",
+    "蓝色": "蓝",
+    "蓝底": "蓝",
+    "黑色": "黑",
+    "黑底": "黑",
+    "黄色": "黄",
+    "黄底": "黄",
+    "橙色": "橙",
+    "橙底": "橙",
+    "粉色": "粉",
+    "粉底": "粉",
+    "紫色": "紫",
+    "紫底": "紫",
+    "灰色": "灰",
+    "灰底": "灰",
+    "银色": "银",
+    "金色": "金",
+    "棕色": "棕",
+    "咖啡色": "咖啡",
+    "米色": "米",
+    "透明": "透明",
+    "卡其": "卡其",
+}
 
 
 def clean(value: Any) -> str:
@@ -135,6 +177,38 @@ def commercial_promise_attr(queue_row: dict[str, Any]) -> bool:
     return attr in COMMERCIAL_PROMISE_ATTRS
 
 
+def color_attr(queue_row: dict[str, Any]) -> bool:
+    attr = clean(queue_row.get("attribute_name")).strip("<>")
+    return any(term in attr for term in COLOR_ATTR_TERMS)
+
+
+def color_values(text: Any) -> set[str]:
+    blob = clean(text)
+    return {value for token, value in COLOR_VALUES.items() if token in blob}
+
+
+def exhaustive_enum_claim(text: Any) -> bool:
+    blob = clean(text)
+    return any(cue in blob for cue in EXHAUSTIVE_ENUM_CUES)
+
+
+def enumeration_claim_evidence_extra_values(queue_row: dict[str, Any], review: dict[str, Any]) -> bool:
+    """Catch enumeration claims whose product evidence exposes extra options.
+
+    These rows are not discarded. They are held in silver because the product
+    evidence no longer cleanly supports the exact主播 claim being judged.
+    """
+    if not color_attr(queue_row):
+        return False
+    claim_text = clean(review.get("claim_text"))
+    evidence_text = clean(review.get("evidence_text"))
+    if not exhaustive_enum_claim(claim_text):
+        return False
+    claim_vals = color_values(claim_text)
+    evidence_vals = color_values(evidence_text)
+    return bool(claim_vals and evidence_vals and (evidence_vals - claim_vals))
+
+
 def confidence_score(value: str) -> float:
     value = clean(value).lower()
     if value == "high":
@@ -186,6 +260,8 @@ def promotion_state(queue_row: dict[str, Any], review: dict[str, Any], rel: Coun
         return "repair_numeric_value_judgment"
     if commercial_promise_attr(queue_row):
         return "silver_commercial_promise_attribute"
+    if enumeration_claim_evidence_extra_values(queue_row, review):
+        return "silver_enumeration_evidence_extra_values"
     if rel.get("refute", 0) > 0:
         return "main_positive_refute"
     if rel.get("support", 0) > 0 and rel.get("mixed", 0) == 0:
@@ -295,8 +371,80 @@ def is_main(row: dict[str, Any]) -> bool:
     return state in {"main_positive_refute", "main_negative_support"}
 
 
-def summarize(rows: list[dict[str, Any]], main_rows: list[dict[str, Any]], missing_reviews: int) -> dict[str, Any]:
-    return {
+def claim_family_key(row: dict[str, Any]) -> tuple[str, str, str]:
+    claim = ((row.get("claim") or {}).get("passage") or "")
+    return (
+        clean(row.get("product_id")),
+        clean(row.get("room_id")),
+        compact(claim),
+    )
+
+
+def claim_family_score(row: dict[str, Any]) -> tuple[int, int, int, int, int, str]:
+    attr = clean(row.get("attribute_name")).strip("<>")
+    audit = row.get("label_audit") or {}
+    aligned = int(audit.get("aligned_comment_count") or 0)
+    evidence_count = int(row.get("evidence_count") or 0)
+    return (
+        0 if attr in GENERIC_ATTRIBUTE_NAMES else 1,
+        evidence_count,
+        aligned,
+        1 if int(row.get("y", 0) or 0) == 1 else 0,
+        len(attr),
+        clean(row.get("pair_id")),
+    )
+
+
+def apply_claim_family_dedupe(rows: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    groups: dict[tuple[str, str, str], list[dict[str, Any]]] = {}
+    for row in rows:
+        if not is_main(row):
+            continue
+        key = claim_family_key(row)
+        if not key[2]:
+            continue
+        groups.setdefault(key, []).append(row)
+
+    demoted = 0
+    examples: list[dict[str, Any]] = []
+    for key, vals in groups.items():
+        if len(vals) < 2:
+            continue
+        kept = max(vals, key=claim_family_score)
+        for row in vals:
+            if row is kept:
+                continue
+            audit = row.setdefault("label_audit", {})
+            before = clean(audit.get("promotion_state"))
+            audit["promotion_state_before_dedupe"] = before
+            audit["promotion_state"] = "silver_duplicate_claim_family"
+            audit["duplicate_claim_family_kept_pair_id"] = kept.get("pair_id")
+            audit["duplicate_claim_family_key"] = "|".join(key)
+            row["y"] = 0
+            demoted += 1
+            if len(examples) < 20:
+                examples.append({
+                    "demoted_pair_id": row.get("pair_id"),
+                    "kept_pair_id": kept.get("pair_id"),
+                    "attribute_name": row.get("attribute_name"),
+                    "kept_attribute_name": kept.get("attribute_name"),
+                    "state_before": before,
+                })
+
+    return rows, {
+        "duplicate_claim_family_groups": sum(1 for vals in groups.values() if len(vals) > 1),
+        "duplicate_claim_family_demoted": demoted,
+        "duplicate_claim_family_examples": examples,
+    }
+
+
+def summarize(
+    rows: list[dict[str, Any]],
+    main_rows: list[dict[str, Any]],
+    missing_reviews: int,
+    extra: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    report = {
         "reviewed_rows": len(rows),
         "main_rows": len(main_rows),
         "missing_reviews": missing_reviews,
@@ -308,6 +456,9 @@ def summarize(rows: list[dict[str, Any]], main_rows: list[dict[str, Any]], missi
         "main_split_leakage": split_leakage(main_rows) if main_rows else {},
         "category": dict(Counter(clean(r.get("category")) for r in main_rows)),
     }
+    if extra:
+        report.update(extra)
+    return report
 
 
 def write_markdown(path: str | Path, report: dict[str, Any], args: argparse.Namespace) -> None:
@@ -368,13 +519,14 @@ def main() -> None:
             continue
         rows.append(build_row(qrow, review))
 
+    rows, dedupe_report = apply_claim_family_dedupe(rows) if rows else (rows, {})
     rows = assign_room_splits(rows) if rows else []
     main_rows = assign_room_splits([r for r in rows if is_main(r)]) if rows else []
     repair_rows = [r for r in rows if not is_main(r)]
     write_jsonl(args.out_all, rows)
     write_jsonl(args.out_main, main_rows)
     write_jsonl(args.out_repair, repair_rows)
-    report = summarize(rows, main_rows, missing_reviews)
+    report = summarize(rows, main_rows, missing_reviews, dedupe_report)
     report.update({
         "queue": args.queue,
         "reviews": args.reviews,
