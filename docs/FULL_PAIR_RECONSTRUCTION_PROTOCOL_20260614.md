@@ -1,0 +1,164 @@
+# Full Pair Reconstruction Protocol v1
+
+## Why This Reset Exists
+
+The proposal task is not a generic product-quality classifier and not an
+objective product-page fact checker.  The unit is a natural live-commerce
+consumer-perception event:
+
+`(product, attribute, livestream claim, product-side evidence, consumer comments)`
+
+The old filtered datasets kept only rows where the upstream pipeline had already
+found a usable claim/evidence pair.  This created a measurement problem: many
+valid product-attribute pairs were excluded because claim extraction or product
+evidence extraction failed, and labels for missing-claim rows were often treated
+as negatives without actually comparing comments against the relevant streamer
+claim.
+
+Therefore the main data line is reset to all product-scope pairs from the
+proposal audit.  Old labels and confidence scores are audit signals only.
+
+## Full-Pair Coverage
+
+Source audit:
+
+- `data/final/repaired_v1/proposal_quality_audit_all_v1_20260613.jsonl`
+
+Full reconstruction queue:
+
+- `data/final/repaired_v1/full_pair_reconstruction_queue_v1_20260614.jsonl`
+- `data/final/repaired_v1/full_pair_reconstruction_queue_v1_20260614.report.json`
+
+Summary:
+
+| item | count |
+|---|---:|
+| product-attribute pairs | 13,769 |
+| skipped non-product-scope rows | 2,910 |
+| pairs with Stage-A comment mentions | 13,769 |
+| pairs with negative comment mentions | 6,900 |
+| pairs with explicit fact-hit comment mentions | 3,170 |
+
+The user-mentioned total 13,796 is interpreted as the same full product-attribute
+population; the current audit artifact contains 13,769 rows.
+
+## Missingness Diagnosis
+
+| state | count |
+|---|---:|
+| claim missing | 10,666 |
+| claim present but needs review | 1,646 |
+| claim present and specific | 1,457 |
+| product evidence missing | 6,961 |
+| single-source product evidence | 4,550 |
+| multi-source product evidence | 2,258 |
+
+Old label states:
+
+| old label state | count |
+|---|---:|
+| old negative with no aligned review | 12,219 |
+| old positive with claim-aligned negative review | 966 |
+| old negative with claim-aligned nonnegative review | 584 |
+
+This confirms the core defect: the biggest pool is not necessarily true
+negative data; it is mostly "claim/evidence not recovered, so comment was never
+properly compared to the same claim".
+
+## Queue Design
+
+Builder:
+
+- `src/data_quality/build_full_pair_reconstruction_queue_v1.py`
+
+Queue distribution:
+
+| queue type | count |
+|---|---:|
+| full claim/evidence/label rebuild | 10,394 |
+| claim re-extract + label rebuild | 1,918 |
+| evidence refresh + label rebuild | 1,117 |
+| label rebuild on existing triplet | 340 |
+
+Priority:
+
+| priority | count |
+|---|---:|
+| P0 | 6,336 |
+| P1 | 5,202 |
+| P2 | 2,016 |
+| P3 | 215 |
+
+The priority score is only a scheduling device.  It does not make any row easier
+or cleaner for training, and it does not delete hard samples.
+
+## Rebuild Rules
+
+For every pair, the LLM/VLM verifier must recover or judge:
+
+1. A minimal continuous streamer claim from raw SRT.
+2. Product-side evidence from title, parameters, detail-image OCR, or
+   detail-image visual observation.
+3. Attribute-level consumer comments that support, refute, or do not align to
+   that exact repaired claim.
+
+Final label rule:
+
+- `new_y=1` only when a recovered claim exists and at least one attribute-level
+  consumer comment is aligned to the same claim and refutes it.
+- `new_y=0` when comments support the claim, discuss the attribute without
+  contradicting the claim, or no claim can be recovered.
+- Product evidence contradicting the claim is not enough by itself to create a
+  positive consumer-perception label.  It can be a mechanism variable or an
+  evidence relation state, but the target label still requires consumer
+  refutation.
+
+Old `y` and `c` are stored as `old_y` and `old_c` for auditing only.
+
+## Service-Like Attribute Boundary
+
+The audit source is product-scope, but historical Stage-A comments sometimes
+mark transaction promises such as price protection, delivery, warranty, or
+after-sales service as `service`.  These should not be blindly deleted.  The
+verifier should treat them as commercial-promise attributes only if the streamer
+claim and the consumer comment discuss the same promise.  Otherwise they become
+`not_aligned` comments and cannot trigger `new_y=1`.
+
+This preserves hard cases while avoiding a category-boundary shortcut.
+
+## LLM/VLM Runner
+
+Runner:
+
+- `src/data_quality/llm_full_pair_reconstruct_v1.py`
+
+Default pilot command:
+
+```bash
+PYTHONPATH=src python3 -m data_quality.llm_full_pair_reconstruct_v1 \
+  --priority P0 \
+  --limit 20 \
+  --concurrency 2 \
+  --model Qwen3-VL-Plus
+```
+
+The runner enforces `new_y` after parsing model output: even if the model emits
+`new_y=1`, the saved label is reset to `0` unless there is a recovered claim and
+at least one aligned `refute` comment judgment.
+
+The output is an audit artifact, not a direct training dataset.  A later
+promotion step must verify provenance, source coverage, split hygiene, and
+label-confidence calibration before building the final supervised benchmark.
+
+## Immediate Next Steps
+
+1. Run a P0 pilot once the remote API environment is configured, then manually
+   inspect at least 30 reconstructed examples across categories and attribute
+   families.
+2. Add a promotion builder that converts accepted rows into complete
+   `(claim, product evidence, comment-aligned label)` training rows without
+   dropping unrecovered but valid hard cases.
+3. Rebuild grouped train/validation/test splits by product or room before any
+   model comparison.
+4. Re-run baseline and CLAIMARC experiments only after the new full-pair
+   promotion artifact is created; the older 910/481 datasets remain diagnostics.

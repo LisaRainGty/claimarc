@@ -7,6 +7,55 @@ evaluation.
 
 ## Current Anchors
 
+### 2026-06-14 full-pair reconstruction reset
+
+The main data construction line has been reset again after the upstream failure
+mode became clear: the corpus already contains 13,769 product-attribute pairs,
+but most were filtered because the old pipeline failed to recover streamer
+claims and/or product evidence.  The correct response is not to keep optimizing
+the 910/481-row diagnostic pools.  The paper-scale dataset must be rebuilt from
+the full product-attribute population.
+
+Current full-pair artifacts:
+
+- reconstruction protocol:
+  `docs/FULL_PAIR_RECONSTRUCTION_PROTOCOL_20260614.md`
+- full queue:
+  `data/final/repaired_v1/full_pair_reconstruction_queue_v1_20260614.jsonl`
+- queue report:
+  `data/final/repaired_v1/full_pair_reconstruction_queue_v1_20260614.report.json`
+- builder:
+  `src/data_quality/build_full_pair_reconstruction_queue_v1.py`
+- LLM/VLM runner:
+  `src/data_quality/llm_full_pair_reconstruct_v1.py`
+
+Queue summary:
+
+| item | count |
+|---|---:|
+| product-attribute pairs | 13,769 |
+| P0 / P1 / P2 / P3 | 6,336 / 5,202 / 2,016 / 215 |
+| full claim/evidence/label rebuild | 10,394 |
+| claim re-extract + label rebuild | 1,918 |
+| evidence refresh + label rebuild | 1,117 |
+| label rebuild on existing triplet | 340 |
+
+Label policy for this reset:
+
+- old `y/c` are audit-only fields;
+- claim extraction must recover a minimal continuous SRT claim for the target
+  attribute;
+- product evidence must come from title, params, detail OCR, or detail-image
+  VLM, not from comments or SRT;
+- final `new_y=1` requires at least one attribute-level consumer comment aligned
+  to the repaired claim and refuting it;
+- product-evidence contradiction alone is a mechanism/evidence relation state,
+  not a positive consumer-perception label.
+
+The 910-row complete candidate, the 459/481 triplet-aligned diagnostic views,
+and all over-cleaned high-AUROC experiments remain useful for error analysis and
+model debugging, but they are no longer the main paper benchmark.
+
 ### 2026-06-13 methodological correction
 
 The main paper benchmark is being reset to a proposal-faithful supervised

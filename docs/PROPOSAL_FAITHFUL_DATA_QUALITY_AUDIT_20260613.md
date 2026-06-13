@@ -3,6 +3,49 @@
 ## Principle
 The main supervised dataset should contain complete claim, evidence, and consumer-perception labels. Incomplete rows are not relabeled for training; they are routed to completion queues.
 
+## 2026-06-14 Full-Pair Reconstruction Reset
+
+The earlier completion queues correctly diagnosed missing claims and missing
+product evidence, but they still started from the filtered view of the data.
+The current correction is to return to the full product-attribute population:
+13,769 rows in `proposal_quality_audit_all_v1_20260613.jsonl`.
+
+New artifacts:
+
+- protocol:
+  `docs/FULL_PAIR_RECONSTRUCTION_PROTOCOL_20260614.md`
+- full-pair queue:
+  `data/final/repaired_v1/full_pair_reconstruction_queue_v1_20260614.jsonl`
+- report:
+  `data/final/repaired_v1/full_pair_reconstruction_queue_v1_20260614.report.json`
+- deterministic builder:
+  `src/data_quality/build_full_pair_reconstruction_queue_v1.py`
+- LLM/VLM verifier:
+  `src/data_quality/llm_full_pair_reconstruct_v1.py`
+
+Full-pair report:
+
+| field | count |
+|---|---:|
+| product-attribute pairs | 13,769 |
+| pairs with comment mentions | 13,769 |
+| pairs with negative comment mentions | 6,900 |
+| pairs with explicit fact-hit mentions | 3,170 |
+| claim missing | 10,666 |
+| evidence missing | 6,961 |
+| old negative with no aligned review | 12,219 |
+
+The decisive change is the label rule.  Old `y/c` are now audit-only.  A final
+positive label requires a recovered target-attribute streamer claim and at least
+one consumer comment aligned to that same claim that refutes it.  Product-page
+evidence can explain mechanisms and support retrieval contrastive learning, but
+product evidence contradiction alone cannot create a positive
+consumer-perception label.
+
+This reset keeps hard cases in scope.  Rows with unrecovered claims or weak
+evidence are routed to reconstruction and low-confidence states rather than
+deleted to improve AUROC.
+
 ## Outputs
 - `audit_all`: `data/final/repaired_v1/proposal_quality_audit_all_v1_20260613.jsonl`
 - `complete_claim_evidence_main`: `data/final/repaired_v1/dataset_attrpol_proposal_complete_claim_evidence_v1_20260613.jsonl`

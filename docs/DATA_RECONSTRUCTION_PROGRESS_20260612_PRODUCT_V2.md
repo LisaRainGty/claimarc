@@ -1847,3 +1847,49 @@ Decision:
 - To improve results, first repair the 227 evidence-rerun rows and 21
   claim-reextraction rows from raw data; do not treat their absence as a reason
   to remove them from evaluation.
+
+## 2026-06-14 Full-Pair Reconstruction Reset
+
+A deeper audit changes the main data plan.  The corpus already has 13,769
+product-attribute pairs in the proposal audit, but most were filtered because
+the upstream extractor did not recover a streamer claim and/or product evidence.
+This means the old negative state often reflected extraction failure rather than
+a true non-misleading consumer-perception event.
+
+New mainline artifacts:
+
+- protocol:
+  `docs/FULL_PAIR_RECONSTRUCTION_PROTOCOL_20260614.md`
+- queue:
+  `data/final/repaired_v1/full_pair_reconstruction_queue_v1_20260614.jsonl`
+- report:
+  `data/final/repaired_v1/full_pair_reconstruction_queue_v1_20260614.report.json`
+- builder:
+  `src/data_quality/build_full_pair_reconstruction_queue_v1.py`
+- LLM/VLM runner:
+  `src/data_quality/llm_full_pair_reconstruct_v1.py`
+
+Full-pair queue summary:
+
+| queue type | rows |
+|---|---:|
+| full claim/evidence/label rebuild | 10,394 |
+| claim re-extract + label rebuild | 1,918 |
+| evidence refresh + label rebuild | 1,117 |
+| label rebuild on existing triplet | 340 |
+
+Label correction:
+
+- Old `y/c` are kept only as audit fields.
+- The final label is rebuilt by comparing attribute-level consumer comments to
+  the same recovered streamer claim.
+- `new_y=1` requires an aligned consumer comment that refutes the claim.
+- Product evidence contradiction alone becomes an evidence/mechanism state, not
+  the consumer-perception target.
+
+Implication for experiments:
+
+- The 910 complete rows, 459/481 triplet-aligned rows, and previous high-AUROC
+  repaired views remain diagnostics only.
+- The next publishable grouped-CV run should wait for a promoted full-pair
+  reconstruction artifact that preserves hard cases instead of filtering them.
