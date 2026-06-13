@@ -1717,3 +1717,61 @@ Macro-F1 0.9304 / wF1 0.8607) on AP, AUROC, and Macro-F1, while wF1 is lower
 because residual conservative v1 removes/downweights many high-uncertainty
 rows.  A full 5-fold run has been started with the same tmpdir, reusing fold 0
 and continuing folds 1-4.
+
+Residual conservative v1 full 5-fold RACL-U CV:
+
+- `data/final/cleancl/remote_results_20260613/cv_attrpol_raclu_residual_cons_full_clc02_w025_cap1500_bs8_s0_bge_20260613.json`
+- `data/final/cleancl/remote_results_20260613/oof_attrpol_raclu_residual_cons_full_clc02_w025_cap1500_bs8_s0_bge_20260613.npz`
+
+| method | AP | AUROC | Macro-F1 | wF1 | n |
+|---|---:|---:|---:|---:|---:|
+| CLAIMARC selectiveRKC + RACL-U | 0.9309 | 0.9665 | 0.9138 | 0.8440 | 1,783 |
+| CLAIMARC v2 | 0.9183 | 0.9607 | 0.9123 | 0.8462 | 1,783 |
+| BGE-LR | 0.9305 | 0.9651 | 0.9165 | 0.8263 | 1,783 |
+
+This validates the data repair: base RACL-U now matches or slightly exceeds
+BGE-LR on ranking and gives much higher confidence-weighted F1, although BGE
+still has a small Macro-F1 edge before calibration.
+
+Residual conservative v1 + source-conditioned RACL-U+C:
+
+- `data/final/cleancl/remote_results_20260613/cv_oof_raclu_c_sourceonly_residual_cons_full_clc02_20260613.json`
+- `data/final/cleancl/remote_results_20260613/oof_raclu_c_sourceonly_residual_cons_full_clc02_20260613.npz`
+- `data/final/cleancl/remote_results_20260613/mechanisms_raclu_c_sourceonly_residual_cons_full_clc02_vs_bge_20260613.json`
+
+| method | AP | AUROC | Macro-F1 | wF1 | ECE10 | n |
+|---|---:|---:|---:|---:|---:|---:|
+| BGE-LR | 0.9305 | 0.9651 | 0.9165 | 0.8263 | 0.1817 | 1,783 |
+| CLAIMARC selectiveRKC + RACL-U | 0.9309 | 0.9665 | 0.9138 | 0.8440 | 0.1289 | 1,783 |
+| RACL-U+C source-conditioned | 0.9419 | 0.9750 | 0.9296 | 0.8652 | 0.0204 | 1,783 |
+
+Paired bootstrap, RACL-U+C source-conditioned vs BGE-LR:
+
+- `dAP=+0.0117`, 95% CI `[-0.0059, 0.0291]`
+- `dAUROC=+0.0100`, 95% CI `[0.0042, 0.0160]`
+- `dMacroF1=+0.0133`, 95% CI `[0.0017, 0.0257]`
+- `dWF1=+0.0392`, 95% CI `[0.0078, 0.0707]`
+
+Ablation:
+
+| calibration feature set | AP | AUROC | Macro-F1 | wF1 | note |
+|---|---:|---:|---:|---:|---|
+| score only | 0.9194 | 0.9690 | 0.9329 | 0.8451 | improves decision boundary but loses ranking AP |
+| source-conditioned | 0.9419 | 0.9750 | 0.9296 | 0.8652 | best publishable balance; keeps AP and improves calibration |
+| nested selected source/full | 0.9430 | 0.9751 | 0.9290 | 0.8650 | similar; slightly higher AP, slightly lower Macro-F1 |
+
+Mechanism diagnostics:
+
+- RACL-U+C corrects 65 rows that BGE-LR misses; BGE-LR corrects 41 rows that
+  RACL-U+C misses.
+- Calibration error drops sharply: ECE10 0.1817 (BGE-LR) and 0.1289 (base
+  RACL-U) to 0.0204.
+- Gains are strongest where source reliability matters: source_count=1
+  (`dAP=+0.0229`, `dMacro-F1=+0.0287`), source_count=2 (`dAP=+0.0150`,
+  `dWF1=+0.1339`), P-only evidence (`dAP=+0.0291`), O-only evidence
+  (`dAP=+0.0277`), highest-confidence quantile (`dAUROC=+0.0502`), and low
+  confidence quantile (`dMacro-F1=+0.0685`).
+- The remaining weak spots are PO evidence and a few categories
+  (digital/electronics, shoes/bags, sports/outdoor), which should become
+  targeted robustness and error-analysis slices rather than another broad
+  architecture change.

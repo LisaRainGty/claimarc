@@ -272,6 +272,8 @@ def main() -> None:
     ap.add_argument("--n_boot", type=int, default=2000)
     ap.add_argument("--seed", type=int, default=13)
     ap.add_argument("--out", required=True)
+    ap.add_argument("--dump_oof", default="",
+                    help="Optional npz with original OOF arrays plus RACL_U_C probabilities/decisions.")
     args = ap.parse_args()
 
     z = np.load(args.oof, allow_pickle=True)
@@ -370,6 +372,13 @@ def main() -> None:
     }
     Path(args.out).parent.mkdir(parents=True, exist_ok=True)
     Path(args.out).write_text(json.dumps(out, ensure_ascii=False, indent=2), encoding="utf-8")
+    if args.dump_oof:
+        dump = {key: z[key] for key in z.files}
+        dump["p__RACL_U_C"] = p_meta
+        dump["yhat__RACL_U_C"] = yhat_meta
+        Path(args.dump_oof).parent.mkdir(parents=True, exist_ok=True)
+        np.savez_compressed(args.dump_oof, **dump)
+        print(f"[dump_oof] -> {args.dump_oof}")
     print(json.dumps({"rows": rows, "selected_counts": out["selected_counts"]}, ensure_ascii=False, indent=2))
     print(f"[RACL-U+C] -> {args.out}")
 

@@ -249,21 +249,30 @@ Current residual data finding:
   positive: CLAIMARC selectiveRKC reaches AP 0.9651 / AUROC 0.9792 /
   Macro-F1 0.9477 / wF1 0.8451, versus BGE-LR 0.9461 / 0.9716 / 0.9201 /
   0.8110 on the same fold.  This justifies the full 5-fold run now in progress.
+- Residual conservative v1 full 5-fold RACL-U CV has completed.  Base RACL-U
+  matches or slightly exceeds BGE-LR on AP/AUROC and beats it on wF1, but BGE
+  still has a small Macro-F1 edge before calibration:
+  CLAIMARC selectiveRKC 0.9309 / 0.9665 / 0.9138 / 0.8440 vs BGE-LR
+  0.9305 / 0.9651 / 0.9165 / 0.8263.
+- Source-conditioned RACL-U+C is now the best top-line candidate:
+  AP 0.9419 / AUROC 0.9750 / Macro-F1 0.9296 / wF1 0.8652 / ECE10 0.0204.
+  Against BGE-LR, AUROC, Macro-F1, and wF1 are significant by paired bootstrap;
+  AP is positive but still not significant.  This is the cleanest current
+  ACL/EMNLP-style main table result.
 
 ## Immediate Queue
 
-1. Finish residual conservative v1 full 5-fold RACL-U CV on the GPU, then run
-   source-conditioned and selected RACL-U+C OOF calibration on the saved OOF.
-2. If the full 5-fold result does not preserve the fold-0 advantage, run
-   residual candidate v1 fold-0; its lightweight Macro-F1 is better but AP is
-   less clean.
-3. Promote source-conditioned RACL-U+C into a formal method variant and rerun
+1. Promote source-conditioned RACL-U+C into the formal method variant and rerun
    confirmation diagnostics with fixed pre-registered hyperparameters:
    score-only, source-conditioned, and selected source/full.
-4. Add a narrow robustness ablation around the mask threshold:
+2. Add a narrow robustness ablation around the mask threshold:
    `(cl_c_min, cl_neg_c_min) in {(0.1,0.1), (0.2,0.2), (0.3,0.3)}` only after
    the calibration diagnostic identifies whether AP or F1 is the binding
    constraint.
-5. Use the full400/residual review states to build a formal RACL-U data artifact:
+3. Use the full400/residual review states to build a formal RACL-U data artifact:
    utility-positive support/contradiction evidence, low-utility ignore masks,
    and bad-claim exclusion, without adding an LLM at inference time.
+4. Build the paper tables around four layers: BGE-LR, base RACL-U, score-only
+   calibration, source-conditioned RACL-U+C.  Mechanism checks should emphasize
+   ECE reduction, source_count/evidence_combo gains, and corrected residual
+   boundary cases.
