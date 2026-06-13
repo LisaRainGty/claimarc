@@ -7,7 +7,49 @@ evaluation.
 
 ## Current Anchors
 
-Main grouped-CV evaluation dataset:
+### 2026-06-13 methodological correction
+
+The main paper benchmark is being reset to a proposal-faithful supervised
+definition.  The user-facing task is not "make AUROC high by cleaning away hard
+or incomplete rows"; it is to learn consumer-perceived misleading risk from
+complete `(claim, product evidence, consumer label)` triplets constructed from
+the raw pipeline described in the proposal.
+
+Current proposal-faithful data artifacts:
+
+- audit view:
+  `data/final/repaired_v1/proposal_quality_audit_all_v1_20260613.jsonl`
+- current complete claim/evidence main candidate:
+  `data/final/repaired_v1/dataset_attrpol_proposal_complete_claim_evidence_v1_20260613.jsonl`
+  - n=910, positive=289, positive rate=31.8%
+  - every row is product-scope, has a specific SRT claim, and has at least one
+    product evidence source
+  - labels are still the proposal weak labels; low-confidence negatives remain
+    with their original sample weight `c`
+- reviewable complete-after-claim-review candidate:
+  `data/final/repaired_v1/dataset_attrpol_proposal_complete_after_claim_review_v1_20260613.jsonl`
+  - n=1,911, positive=594, positive rate=31.1%
+  - requires claim-specificity review before becoming a main benchmark
+- prompt-ready completion queue:
+  `data/final/repaired_v1/proposal_llm_completion_queue_v1_20260613.jsonl`
+  - P0=379, P1=979, P2=11,501
+  - queue types: joint claim/evidence completion 6,414; claim completion
+    5,898; product-evidence completion 547
+
+Lightweight learnability on the corrected complete candidates:
+
+| dataset | AUPRC | AUROC | Macro-F1 | interpretation |
+|---|---:|---:|---:|---|
+| complete claim/evidence main | 0.6367 | 0.8540 | 0.7578 | realistic current benchmark |
+| complete after claim review | 0.6834 | 0.8663 | 0.7710 | diagnostic until reviewed |
+
+The previous `softdropbad`, `residual conservative`, and source-conditioned
+RACL-U+C results are retained as diagnostic upper bounds and mechanism probes
+only.  They should not be reported as the main paper result unless regenerated
+from complete claim/evidence/label triplets without dropping hard-but-valid
+examples.
+
+Legacy grouped-CV evaluation dataset:
 
 - `data/final/repaired_v1/dataset_attrpol_hq_product_rawtext_llmcurated_source_recovered_v3_dropunresolved.jsonl`
 - n=2,093, positive=686, grouped by `room_id`
