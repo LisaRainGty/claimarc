@@ -652,6 +652,69 @@ but makes the supervised row definition match the paper's natural process:
 streamer claim, product-side evidence for that exact claim, and consumer
 comments judged against the same claim.
 
+The next 40 unreviewed rows from the same 120-row seed were generated with the
+same low-noise ordering after excluding the first low-noise40 queue:
+
+- queue:
+  `docs/FULL_PAIR_CLAIM_REEXTRACT_FULL_P0_STRONGWEAK120_LOWNOISE_NEXT40_JOINT_REVIEW_QUEUE_20260614.md`
+- no-image audit v3:
+  `docs/FULL_PAIR_CLAIM_REEXTRACT_FULL_P0_STRONGWEAK120_LOWNOISE_NEXT40_NOIMG_AUDIT_V3_20260614.md`
+- no-image promotion v3:
+  `docs/FULL_PAIR_CLAIM_REEXTRACT_FULL_P0_STRONGWEAK120_LOWNOISE_NEXT40_NOIMG_PROMOTION_V3_20260614.md`
+
+Low-noise next40 no-image result after the new gates:
+
+| state | count |
+|---|---:|
+| reviewed rows | 40 |
+| conservative main rows | 7 |
+| `main_positive_refute` | 5 |
+| `main_negative_support` | 2 |
+| `silver_refute_insufficient_product_evidence` | 6 |
+| `silver_refute_missing_product_evidence` | 5 |
+| `repair_missing_claim` | 12 |
+| `repair_identity_claim_value` | 2 |
+| `silver_attribute_semantic_drift` | 1 |
+| `silver_consumer_expectation_mismatch` | 1 |
+| `silver_subjective_eval_attribute` | 2 |
+
+Three additional quality gates came from this manual audit:
+
+- Attribute semantic drift: for example, `电池容量` cannot be filled by a
+  `20颗/20个` quantity claim unless capacity units such as mAh/毫安 are present.
+- Consumer expectation mismatch: comments such as "我以为/没看清" are preserved,
+  but they are not direct claim refutations when the recovered claim explicitly
+  states the product composition.
+- Subjective evaluation attributes such as `智商税` and broad `商品质量` stay in
+  stateful/silver views unless remapped to a concrete product attribute.
+
+The next40 no-image silver positives were then routed through Stage-C/VLM
+evidence repair:
+
+- queue:
+  `docs/FULL_PAIR_EVIDENCE_REPAIR_QUEUE_LOWNOISE_NEXT40_SILVER11_20260614.md`
+- VLM audit v2:
+  `docs/FULL_PAIR_LOWNOISE_NEXT40_SILVER11_VLM_AUDIT_V2_20260614.md`
+- VLM promotion v2:
+  `docs/FULL_PAIR_LOWNOISE_NEXT40_SILVER11_VLM_PROMOTION_V2_20260614.md`
+
+VLM silver11 result:
+
+| state | count |
+|---|---:|
+| reviewed rows | 11 |
+| conservative main rows | 3 |
+| `main_positive_refute` | 3 |
+| `silver_refute_missing_product_evidence` | 4 |
+| `silver_refute_insufficient_product_evidence` | 1 |
+| `silver_price_value_not_direct_refute` | 1 |
+| remaining repair rows | 2 |
+
+The price gate was added after VLM surfaced a row where the streamer price was
+78.8 but comments mentioned 28 and about 80.  Lower or near-equal prices do not
+directly refute a price claim unless the comment clearly states overcharge,
+actual payment mismatch, or a same-promise price-protection violation.
+
 Claim-only re-extraction with `llm_pair_claim_reextract_v1` on these 44 rows
 found exact SRT claim candidates for 23 rows and no claim for 21 rows.  This
 confirms that the missing-claim pool mixes true source-missing rows with
@@ -739,9 +802,13 @@ Promotion states:
   `repair_identity_claim_value`, `silver_mixed_comment_relation`, and
   `repair_numeric_value_judgment`, `silver_commercial_promise_attribute`,
   `silver_enumeration_evidence_extra_values`,
-  `silver_duplicate_claim_family`, and `lowinfo_no_aligned_comment` remain
-  outside the main benchmark but are preserved for repair, weighting, and
-  mechanism analysis.
+  `silver_duplicate_claim_family`, `silver_conflicting_claim_family`,
+  `silver_subjective_eval_attribute`,
+  `silver_consumer_expectation_mismatch`,
+  `silver_attribute_semantic_drift`,
+  `silver_price_value_not_direct_refute`, and `lowinfo_no_aligned_comment`
+  remain outside the main benchmark but are preserved for repair, weighting,
+  and mechanism analysis.
 
 The builder uses conservative reliability weights.  A single high-confidence
 LLM/VLM reconstruction with one explicit aligned refuting comment receives a

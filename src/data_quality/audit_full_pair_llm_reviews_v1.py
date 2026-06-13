@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 from collections import Counter
 from pathlib import Path
 from typing import Any
@@ -49,10 +50,15 @@ IDENTITY_VALUE_ATTRS = {"品牌", "型号", "货号", "条码", "条形码", "�
 PRICE_ATTR_TERMS = {"价格", "售价", "到手价"}
 QUANTITY_ATTR_TERMS = {"净含量", "数量", "包数", "袋数", "件数", "重量", "容量", "尺寸"}
 PRICE_VALUE_JUDGMENT_TERMS = {"太贵", "偏贵", "不便宜", "小贵", "不值", "物没价廉", "价格合理", "合理性"}
+PRICE_OVERCHARGE_CUES = {"多收", "贵了", "贵", "涨价", "不是这个价", "价格不符", "实付", "到手不是", "付款"}
 QUANTITY_VALUE_JUDGMENT_TERMS = {"太少", "少的可怜", "量少", "分量少", "不多", "最少也得", "应该", "应为", "不够"}
 NUMERIC_CONFLICT_CUES = {"不是", "不符", "少发", "少给", "只有", "收到少", "实付", "到手不是", "降价", "买成"}
 COMMERCIAL_PROMISE_ATTRS = {"售卖方式", "购买渠道", "广告宣传", "宣传", "活动信息"}
+SUBJECTIVE_EVAL_ATTR_TERMS = {"智商税", "虚假宣传", "商品质量", "真实性评价", "性价比", "体验", "感受", "评价", "推荐"}
 COLOR_ATTR_TERMS = {"颜色", "包装颜色", "色"}
+EXPECTATION_MISMATCH_CUES = {"以为", "以爲", "没看清", "本来是买", "本来想买", "结果来一看"}
+COUNT_UNIT_CUES = {"个", "颗", "件", "瓶", "袋", "双", "盒", "片", "支", "只", "排"}
+BATTERY_CAPACITY_UNIT_CUES = {"mah", "毫安", "安时", "ah"}
 EXHAUSTIVE_ENUM_CUES = {
     "两个颜色",
     "两种颜色",
@@ -171,9 +177,94 @@ def numeric_value_judgment_refutes(queue_row: dict[str, Any], review: dict[str, 
     return out[:5]
 
 
+def extract_price_values(text: Any) -> list[float]:
+    blob = clean(text)
+    vals: list[float] = []
+    for m in re.finditer(r"(\d+(?:\.\d+)?)\s*(?:元|块|¥|￥)", blob):
+        vals.append(float(m.group(1)))
+    for m in re.finditer(r"(\d+)\s*(?:元|块)\s*(\d)", blob):
+        vals.append(float(f"{m.group(1)}.{m.group(2)}"))
+    return vals
+
+
+def price_comment_not_refuting_claim_value(queue_row: dict[str, Any], review: dict[str, Any], rel: Counter) -> bool:
+    attr = clean(queue_row.get("attribute_name")).strip("<>")
+    if not any(t in attr for t in PRICE_ATTR_TERMS) or rel.get("refute", 0) <= 0:
+        return False
+    claim_prices = extract_price_values(review.get("claim_text"))
+    if not claim_prices:
+        return False
+    claim_price = max(claim_prices)
+    mentions = queue_row.get("consumer_mentions") or []
+    comment_prices: list[float] = []
+    overcharge_text = False
+    for item in review.get("comment_judgments") or []:
+        if not isinstance(item, dict):
+            continue
+        if not item.get("aligned_to_claim") or clean(item.get("relation")) != "refute":
+            continue
+        try:
+            cid = int(item.get("cid", 0) or 0)
+        except Exception:
+            cid = 0
+        span = clean(mentions[cid - 1].get("evidence_span")) if 1 <= cid <= len(mentions) else ""
+        blob = span + " " + clean(item.get("reason"))
+        comment_prices.extend(extract_price_values(blob))
+        if any(cue in blob for cue in PRICE_OVERCHARGE_CUES):
+            overcharge_text = True
+    if not comment_prices:
+        return False
+    if max(comment_prices) <= claim_price * 1.05 and not overcharge_text:
+        return True
+    if max(comment_prices) <= claim_price * 1.05 and min(comment_prices) < claim_price * 0.8:
+        return True
+    return False
+
+
 def commercial_promise_attr(queue_row: dict[str, Any]) -> bool:
     attr = clean(queue_row.get("attribute_name")).strip("<>")
     return attr in COMMERCIAL_PROMISE_ATTRS
+
+
+def subjective_eval_attr(queue_row: dict[str, Any]) -> bool:
+    attr = clean(queue_row.get("attribute_name")).strip("<>")
+    return any(term in attr for term in SUBJECTIVE_EVAL_ATTR_TERMS)
+
+
+def consumer_expectation_mismatch(queue_row: dict[str, Any], review: dict[str, Any], rel: Counter) -> bool:
+    if not (rel.get("support", 0) > 0 and rel.get("refute", 0) > 0):
+        return False
+    attr = clean(queue_row.get("attribute_name")).strip("<>")
+    if not any(term in attr for term in {"数量", "规格", "包装", "产品名称"}):
+        return False
+    mentions = queue_row.get("consumer_mentions") or []
+    refute = 0
+    expectation = 0
+    for item in review.get("comment_judgments") or []:
+        if not isinstance(item, dict):
+            continue
+        if not item.get("aligned_to_claim") or clean(item.get("relation")) != "refute":
+            continue
+        refute += 1
+        try:
+            cid = int(item.get("cid", 0) or 0)
+        except Exception:
+            cid = 0
+        span = clean(mentions[cid - 1].get("evidence_span")) if 1 <= cid <= len(mentions) else ""
+        blob = span + " " + clean(item.get("reason"))
+        if any(cue in blob for cue in EXPECTATION_MISMATCH_CUES):
+            expectation += 1
+    return bool(refute and expectation / refute >= 0.5)
+
+
+def attribute_semantic_drift(queue_row: dict[str, Any], review: dict[str, Any]) -> bool:
+    attr = clean(queue_row.get("attribute_name")).strip("<>").lower()
+    if "电池容量" not in attr:
+        return False
+    blob = (clean(review.get("claim_text")) + " " + clean(review.get("evidence_text"))).lower()
+    has_count_unit = any(cue in blob for cue in COUNT_UNIT_CUES)
+    has_capacity_unit = any(cue in blob for cue in BATTERY_CAPACITY_UNIT_CUES)
+    return bool(has_count_unit and not has_capacity_unit)
 
 
 def color_attr(queue_row: dict[str, Any]) -> bool:
@@ -288,6 +379,20 @@ def promotion_state(queue_row: dict[str, Any], review: dict[str, Any], rel: Coun
         if rel.get("refute", 0) > 0:
             return "silver_refute_insufficient_product_evidence"
         return "repair_insufficient_product_evidence"
+    if claim_contains_identity_value(queue_row, clean(review.get("claim_text"))) is False:
+        return "repair_identity_claim_value"
+    if numeric_value_judgment_refutes(queue_row, review):
+        return "repair_numeric_value_judgment"
+    if price_comment_not_refuting_claim_value(queue_row, review, rel):
+        return "silver_price_value_not_direct_refute"
+    if commercial_promise_attr(queue_row):
+        return "silver_commercial_promise_attribute"
+    if subjective_eval_attr(queue_row):
+        return "silver_subjective_eval_attribute"
+    if consumer_expectation_mismatch(queue_row, review, rel):
+        return "silver_consumer_expectation_mismatch"
+    if attribute_semantic_drift(queue_row, review):
+        return "silver_attribute_semantic_drift"
     if enumeration_claim_evidence_extra_values(queue_row, review):
         return "silver_enumeration_evidence_extra_values"
     if rel.get("refute", 0) > 0:
@@ -368,8 +473,16 @@ def audit_one(queue_row: dict[str, Any], review: dict[str, Any] | None) -> dict[
     if numeric_judgments:
         severity = "high" if state in {"main_positive_refute", "main_negative_support"} or action == "promote_candidate" else "medium"
         add_flag(flags, severity, "numeric_value_judgment_used_as_refute", ";".join(numeric_judgments))
+    if price_comment_not_refuting_claim_value(queue_row, review, rel):
+        add_flag(flags, "medium", "price_value_not_direct_refute_requires_silver")
     if commercial_promise_attr(queue_row) and state in {"main_positive_refute", "main_negative_support"}:
         add_flag(flags, "medium", "commercial_promise_attribute_requires_manual")
+    if subjective_eval_attr(queue_row):
+        add_flag(flags, "medium", "subjective_eval_attribute_requires_silver")
+    if consumer_expectation_mismatch(queue_row, review, rel):
+        add_flag(flags, "medium", "consumer_expectation_mismatch_requires_silver")
+    if attribute_semantic_drift(queue_row, review):
+        add_flag(flags, "medium", "attribute_semantic_drift_requires_silver")
     extra_enum_values = enumeration_claim_evidence_extra_values(queue_row, review)
     if extra_enum_values:
         severity = "high" if action == "promote_candidate" else "medium"

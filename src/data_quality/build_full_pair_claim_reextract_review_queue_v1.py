@@ -34,6 +34,21 @@ def read_by_pair(path: str | Path) -> dict[str, dict[str, Any]]:
     return out
 
 
+def read_pair_ids(paths: list[str]) -> set[str]:
+    out: set[str] = set()
+    for path in paths:
+        if not path:
+            continue
+        p = Path(path)
+        if not p.exists():
+            continue
+        for row in read_jsonl(p):
+            pid = pair_id(row)
+            if pid:
+                out.add(pid)
+    return out
+
+
 def claim_candidates(result: dict[str, Any], max_claims: int) -> list[dict[str, Any]]:
     claims = []
     for rank, c in enumerate(result.get("claims") or [], 1):
@@ -118,6 +133,8 @@ def write_markdown(path: str | Path, report: dict[str, Any]) -> None:
         "selected_rows",
         "claim_found_pairs",
         "no_claim_pairs",
+        "excluded_pair_ids",
+        "excluded_rows",
         "seeded_claim_count_bucket",
         "category",
     ]:
@@ -154,16 +171,27 @@ def main() -> None:
     ap.add_argument("--max_claims", type=int, default=8)
     ap.add_argument("--limit", type=int, default=0)
     ap.add_argument("--sort_by", choices=["more_claims", "fewer_claims"], default="more_claims")
+    ap.add_argument(
+        "--exclude",
+        nargs="*",
+        default=[],
+        help="JSONL files whose pair_ids should be skipped, e.g. prior joint-review queues or review outputs.",
+    )
     args = ap.parse_args()
 
     queue_by_pair = read_by_pair(args.queue)
     results = list(read_jsonl(args.claim_reextract))
+    excluded_pair_ids = read_pair_ids(args.exclude)
     selected = []
     no_claim_pairs = 0
     missing_queue = 0
+    excluded_rows = 0
     for result in results:
         if clean(result.get("status")) != "claim_found" or not result.get("claims"):
             no_claim_pairs += 1
+            continue
+        if pair_id(result) in excluded_pair_ids:
+            excluded_rows += 1
             continue
         row = queue_by_pair.get(pair_id(result))
         if not row:
@@ -197,6 +225,8 @@ def main() -> None:
         "claim_found_pairs": len([r for r in results if clean(r.get("status")) == "claim_found"]),
         "no_claim_pairs": no_claim_pairs,
         "missing_queue_rows": missing_queue,
+        "excluded_pair_ids": len(excluded_pair_ids),
+        "excluded_rows": excluded_rows,
         "sort_by": args.sort_by,
         "seeded_claim_count_bucket": dict(Counter(count_bucket(int((r.get("_claim_reextract_review") or {}).get("seeded_claim_count", 0) or 0)) for r in selected)),
         "category": dict(Counter(clean(r.get("category")) for r in selected)),

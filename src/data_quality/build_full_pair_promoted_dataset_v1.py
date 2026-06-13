@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 from collections import Counter
 from pathlib import Path
 from typing import Any
@@ -26,11 +27,16 @@ IDENTITY_VALUE_ATTRS = {"品牌", "型号", "货号", "条码", "条形码", "�
 PRICE_ATTR_TERMS = {"价格", "售价", "到手价"}
 QUANTITY_ATTR_TERMS = {"净含量", "数量", "包数", "袋数", "件数", "重量", "容量", "尺寸"}
 PRICE_VALUE_JUDGMENT_TERMS = {"太贵", "偏贵", "不便宜", "小贵", "不值", "物没价廉", "价格合理", "合理性"}
+PRICE_OVERCHARGE_CUES = {"多收", "贵了", "贵", "涨价", "不是这个价", "价格不符", "实付", "到手不是", "付款"}
 QUANTITY_VALUE_JUDGMENT_TERMS = {"太少", "少的可怜", "量少", "分量少", "不多", "最少也得", "应该", "应为", "不够"}
 NUMERIC_CONFLICT_CUES = {"不是", "不符", "少发", "少给", "只有", "收到少", "实付", "到手不是", "降价", "买成"}
 COMMERCIAL_PROMISE_ATTRS = {"售卖方式", "购买渠道", "广告宣传", "宣传", "活动信息"}
 GENERIC_ATTRIBUTE_NAMES = {"描述", "描述相符", "商品描述", "广告宣传", "宣传"}
+SUBJECTIVE_EVAL_ATTR_TERMS = {"智商税", "虚假宣传", "商品质量", "真实性评价", "性价比", "体验", "感受", "评价", "推荐"}
 COLOR_ATTR_TERMS = {"颜色", "包装颜色", "色"}
+EXPECTATION_MISMATCH_CUES = {"以为", "以爲", "没看清", "本来是买", "本来想买", "结果来一看"}
+COUNT_UNIT_CUES = {"个", "颗", "件", "瓶", "袋", "双", "盒", "片", "支", "只", "排"}
+BATTERY_CAPACITY_UNIT_CUES = {"mah", "毫安", "安时", "ah"}
 EXHAUSTIVE_ENUM_CUES = {
     "两个颜色",
     "两种颜色",
@@ -172,9 +178,94 @@ def numeric_value_judgment_refutes(queue_row: dict[str, Any], review: dict[str, 
     return False
 
 
+def extract_price_values(text: Any) -> list[float]:
+    blob = clean(text)
+    vals: list[float] = []
+    for m in re.finditer(r"(\d+(?:\.\d+)?)\s*(?:元|块|¥|￥)", blob):
+        vals.append(float(m.group(1)))
+    for m in re.finditer(r"(\d+)\s*(?:元|块)\s*(\d)", blob):
+        vals.append(float(f"{m.group(1)}.{m.group(2)}"))
+    return vals
+
+
+def price_comment_not_refuting_claim_value(queue_row: dict[str, Any], review: dict[str, Any], rel: Counter) -> bool:
+    attr = clean(queue_row.get("attribute_name")).strip("<>")
+    if not any(t in attr for t in PRICE_ATTR_TERMS) or rel.get("refute", 0) <= 0:
+        return False
+    claim_prices = extract_price_values(review.get("claim_text"))
+    if not claim_prices:
+        return False
+    claim_price = max(claim_prices)
+    mentions = queue_row.get("consumer_mentions") or []
+    comment_prices: list[float] = []
+    overcharge_text = False
+    for item in review.get("comment_judgments") or []:
+        if not isinstance(item, dict):
+            continue
+        if not item.get("aligned_to_claim") or clean(item.get("relation")) != "refute":
+            continue
+        try:
+            cid = int(item.get("cid", 0) or 0)
+        except Exception:
+            cid = 0
+        span = clean(mentions[cid - 1].get("evidence_span")) if 1 <= cid <= len(mentions) else ""
+        blob = span + " " + clean(item.get("reason"))
+        comment_prices.extend(extract_price_values(blob))
+        if any(cue in blob for cue in PRICE_OVERCHARGE_CUES):
+            overcharge_text = True
+    if not comment_prices:
+        return False
+    if max(comment_prices) <= claim_price * 1.05 and not overcharge_text:
+        return True
+    if max(comment_prices) <= claim_price * 1.05 and min(comment_prices) < claim_price * 0.8:
+        return True
+    return False
+
+
 def commercial_promise_attr(queue_row: dict[str, Any]) -> bool:
     attr = clean(queue_row.get("attribute_name")).strip("<>")
     return attr in COMMERCIAL_PROMISE_ATTRS
+
+
+def subjective_eval_attr(queue_row: dict[str, Any]) -> bool:
+    attr = clean(queue_row.get("attribute_name")).strip("<>")
+    return any(term in attr for term in SUBJECTIVE_EVAL_ATTR_TERMS)
+
+
+def consumer_expectation_mismatch(queue_row: dict[str, Any], review: dict[str, Any], rel: Counter) -> bool:
+    if not (rel.get("support", 0) > 0 and rel.get("refute", 0) > 0):
+        return False
+    attr = clean(queue_row.get("attribute_name")).strip("<>")
+    if not any(term in attr for term in {"数量", "规格", "包装", "产品名称"}):
+        return False
+    mentions = queue_row.get("consumer_mentions") or []
+    refute = 0
+    expectation = 0
+    for item in review.get("comment_judgments") or []:
+        if not isinstance(item, dict):
+            continue
+        if not item.get("aligned_to_claim") or clean(item.get("relation")) != "refute":
+            continue
+        refute += 1
+        try:
+            cid = int(item.get("cid", 0) or 0)
+        except Exception:
+            cid = 0
+        span = clean(mentions[cid - 1].get("evidence_span")) if 1 <= cid <= len(mentions) else ""
+        blob = span + " " + clean(item.get("reason"))
+        if any(cue in blob for cue in EXPECTATION_MISMATCH_CUES):
+            expectation += 1
+    return bool(refute and expectation / refute >= 0.5)
+
+
+def attribute_semantic_drift(queue_row: dict[str, Any], review: dict[str, Any]) -> bool:
+    attr = clean(queue_row.get("attribute_name")).strip("<>").lower()
+    if "电池容量" not in attr:
+        return False
+    blob = (clean(review.get("claim_text")) + " " + clean(review.get("evidence_text"))).lower()
+    has_count_unit = any(cue in blob for cue in COUNT_UNIT_CUES)
+    has_capacity_unit = any(cue in blob for cue in BATTERY_CAPACITY_UNIT_CUES)
+    return bool(has_count_unit and not has_capacity_unit)
 
 
 def color_attr(queue_row: dict[str, Any]) -> bool:
@@ -258,8 +349,16 @@ def promotion_state(queue_row: dict[str, Any], review: dict[str, Any], rel: Coun
         return "repair_identity_claim_value"
     if numeric_value_judgment_refutes(queue_row, review):
         return "repair_numeric_value_judgment"
+    if price_comment_not_refuting_claim_value(queue_row, review, rel):
+        return "silver_price_value_not_direct_refute"
     if commercial_promise_attr(queue_row):
         return "silver_commercial_promise_attribute"
+    if subjective_eval_attr(queue_row):
+        return "silver_subjective_eval_attribute"
+    if consumer_expectation_mismatch(queue_row, review, rel):
+        return "silver_consumer_expectation_mismatch"
+    if attribute_semantic_drift(queue_row, review):
+        return "silver_attribute_semantic_drift"
     if enumeration_claim_evidence_extra_values(queue_row, review):
         return "silver_enumeration_evidence_extra_values"
     if rel.get("refute", 0) > 0:
@@ -371,12 +470,16 @@ def is_main(row: dict[str, Any]) -> bool:
     return state in {"main_positive_refute", "main_negative_support"}
 
 
-def claim_family_key(row: dict[str, Any]) -> tuple[str, str, str]:
+def claim_text_norm(row: dict[str, Any]) -> str:
     claim = ((row.get("claim") or {}).get("passage") or "")
+    return compact(claim)
+
+
+def claim_family_key(row: dict[str, Any]) -> tuple[str, str, str]:
     return (
         clean(row.get("product_id")),
         clean(row.get("room_id")),
-        compact(claim),
+        claim_text_norm(row),
     )
 
 
@@ -395,20 +498,67 @@ def claim_family_score(row: dict[str, Any]) -> tuple[int, int, int, int, int, st
     )
 
 
-def apply_claim_family_dedupe(rows: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], dict[str, Any]]:
-    groups: dict[tuple[str, str, str], list[dict[str, Any]]] = {}
-    for row in rows:
-        if not is_main(row):
-            continue
-        key = claim_family_key(row)
-        if not key[2]:
-            continue
-        groups.setdefault(key, []).append(row)
+def same_claim_family(a: dict[str, Any], b: dict[str, Any]) -> bool:
+    if clean(a.get("product_id")) != clean(b.get("product_id")):
+        return False
+    if clean(a.get("room_id")) != clean(b.get("room_id")):
+        return False
+    ca = claim_text_norm(a)
+    cb = claim_text_norm(b)
+    if len(ca) < 8 or len(cb) < 8:
+        return False
+    short, long = (ca, cb) if len(ca) <= len(cb) else (cb, ca)
+    return short in long
 
+
+def claim_family_components(rows: list[dict[str, Any]]) -> list[list[dict[str, Any]]]:
+    remaining = set(range(len(rows)))
+    out: list[list[dict[str, Any]]] = []
+    while remaining:
+        start = remaining.pop()
+        stack = [start]
+        comp = {start}
+        while stack:
+            i = stack.pop()
+            for j in list(remaining):
+                if same_claim_family(rows[i], rows[j]):
+                    remaining.remove(j)
+                    comp.add(j)
+                    stack.append(j)
+        out.append([rows[i] for i in sorted(comp)])
+    return out
+
+
+def apply_claim_family_dedupe(rows: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    main_candidates = [row for row in rows if is_main(row) and claim_text_norm(row)]
+    groups = claim_family_components(main_candidates)
     demoted = 0
+    conflicting_groups = 0
     examples: list[dict[str, Any]] = []
-    for key, vals in groups.items():
+    for vals in groups:
         if len(vals) < 2:
+            continue
+        labels = {int(row.get("y", 0) or 0) for row in vals}
+        if len(labels) > 1:
+            conflicting_groups += 1
+            kept = max(vals, key=claim_family_score)
+            for row in vals:
+                audit = row.setdefault("label_audit", {})
+                before = clean(audit.get("promotion_state"))
+                audit["promotion_state_before_dedupe"] = before
+                audit["promotion_state"] = "silver_conflicting_claim_family"
+                audit["duplicate_claim_family_reference_pair_id"] = kept.get("pair_id")
+                row["y"] = 0
+                demoted += 1
+                if len(examples) < 20:
+                    examples.append({
+                        "demoted_pair_id": row.get("pair_id"),
+                        "kept_pair_id": kept.get("pair_id"),
+                        "attribute_name": row.get("attribute_name"),
+                        "kept_attribute_name": kept.get("attribute_name"),
+                        "state_before": before,
+                        "reason": "conflicting_labels",
+                    })
             continue
         kept = max(vals, key=claim_family_score)
         for row in vals:
@@ -419,7 +569,7 @@ def apply_claim_family_dedupe(rows: list[dict[str, Any]]) -> tuple[list[dict[str
             audit["promotion_state_before_dedupe"] = before
             audit["promotion_state"] = "silver_duplicate_claim_family"
             audit["duplicate_claim_family_kept_pair_id"] = kept.get("pair_id")
-            audit["duplicate_claim_family_key"] = "|".join(key)
+            audit["duplicate_claim_family_key"] = "|".join(claim_family_key(kept))
             row["y"] = 0
             demoted += 1
             if len(examples) < 20:
@@ -429,10 +579,12 @@ def apply_claim_family_dedupe(rows: list[dict[str, Any]]) -> tuple[list[dict[str
                     "attribute_name": row.get("attribute_name"),
                     "kept_attribute_name": kept.get("attribute_name"),
                     "state_before": before,
+                    "reason": "duplicate_same_label",
                 })
 
     return rows, {
-        "duplicate_claim_family_groups": sum(1 for vals in groups.values() if len(vals) > 1),
+        "duplicate_claim_family_groups": sum(1 for vals in groups if len(vals) > 1),
+        "conflicting_claim_family_groups": conflicting_groups,
         "duplicate_claim_family_demoted": demoted,
         "duplicate_claim_family_examples": examples,
     }

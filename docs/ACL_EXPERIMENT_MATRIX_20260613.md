@@ -180,6 +180,30 @@ supervised view under both a specific attribute and a generic `描述` attribute
 Both rows remain in stateful outputs for repair and mechanism analysis; they
 are not deleted as hard samples.
 
+Full P0 strong/weak seed120 low-noise next40 and VLM repair:
+
+| item | count |
+|---|---:|
+| next low-noise joint-review rows | 40 |
+| no-image main rows after all gates | 7 |
+| no-image main positives / negatives | 5 / 2 |
+| no-image evidence-silver rows | 11 |
+| VLM evidence-repair rows | 11 |
+| VLM main positives after price gate | 3 |
+| VLM rows still repair/silver | 8 |
+
+The next40 audit added four proposal-faithful gates:
+
+- attribute semantic drift, e.g. `电池容量` cannot be filled by a `20颗/20个`
+  quantity claim;
+- consumer expectation mismatch, e.g. "以为/没看清" comments are not direct
+  refutations when the recovered claim already states the product composition;
+- subjective/meta attributes such as `智商税` and broad `商品质量` are routed to
+  silver unless remapped to a concrete product attribute;
+- price-value direction, where lower or near-equal prices do not directly
+  refute the streamer price claim without clear overcharge or payment-mismatch
+  language.
+
 Label policy for this reset:
 
 - old `y/c` are audit-only fields;
@@ -195,6 +219,9 @@ Label policy for this reset:
   same enumerated value set, otherwise the row is silver;
 - main supervised rows are de-duplicated by product, room, and recovered claim
   family while duplicate hard cases remain in stateful outputs.
+- attribute semantic drift, subjective/meta attributes, consumer expectation
+  mismatch, and non-refuting price-value comparisons are retained as
+  stateful/silver data rather than promoted into the main benchmark.
 
 The 910-row complete candidate, the 459/481 triplet-aligned diagnostic views,
 and all over-cleaned high-AUROC experiments remain useful for error analysis and
