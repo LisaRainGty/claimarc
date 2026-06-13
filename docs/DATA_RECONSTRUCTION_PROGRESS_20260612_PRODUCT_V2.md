@@ -1078,3 +1078,15 @@ Source-auxiliary status:
   `cv_attrpol_aux_atomic_hardclean_lcl025_w025_cap1500_bs8_s0_20260613`.
   This keeps the data, retrieval mechanism, and architecture fixed, changing
   only the contrastive weight from `lambda_cl=0.5` to `0.25`.
+
+Contrastive-weight sweep status:
+
+- `lambda_cl=0.25` stopped after fold 0:
+  - PCLS: AP 0.8707, AUROC 0.9496, Macro-F1 0.8977, wF1 0.8226
+  - selectiveRKC: AP 0.8817, AUROC 0.9531, Macro-F1 0.8937, wF1 0.8286
+  - both are below the hardclean fold-0 anchor.
+- Decision: weaker RACL does not improve the boundary.  The original
+  `lambda_cl=0.5` remains the anchor unless stronger RACL helps.
+- New active run:
+  `cv_attrpol_aux_atomic_hardclean_lcl075_w025_cap1500_bs8_s0_20260613`,
+  changing only `lambda_cl` from `0.5` to `0.75`.
