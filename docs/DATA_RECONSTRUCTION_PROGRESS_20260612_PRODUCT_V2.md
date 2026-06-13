@@ -1698,3 +1698,22 @@ Interpretation:
 - Candidate repair gives the best lightweight Macro-F1 but weaker AP, so it is
   held as a second-line dataset if conservative repair does not improve the
   full model.
+
+Residual conservative v1 fold-0 RACL-U screen:
+
+- `data/final/cleancl/remote_results_20260613/cv_attrpol_raclu_residual_cons_fold0_clc02_w025_cap1500_bs8_s0_bge_20260613.json`
+- `data/final/cleancl/remote_results_20260613/oof_attrpol_raclu_residual_cons_fold0_clc02_w025_cap1500_bs8_s0_bge_20260613.npz`
+
+| method | AP | AUROC | Macro-F1 | wF1 | n |
+|---|---:|---:|---:|---:|---:|
+| CLAIMARC PCLS + RACL-U | 0.9651 | 0.9792 | 0.9477 | 0.8451 | 390 |
+| CLAIMARC selectiveRKC + RACL-U | 0.9651 | 0.9792 | 0.9477 | 0.8451 | 390 |
+| CLAIMARC v2 | 0.9493 | 0.9717 | 0.9299 | 0.8331 | 390 |
+| BGE-LR | 0.9461 | 0.9716 | 0.9201 | 0.8110 | 390 |
+
+This is the strongest fold-0 screen so far.  It exceeds the previous
+softdropbad full400 v3 + RACL-U fold-0 result (AP 0.9136 / AUROC 0.9675 /
+Macro-F1 0.9304 / wF1 0.8607) on AP, AUROC, and Macro-F1, while wF1 is lower
+because residual conservative v1 removes/downweights many high-uncertainty
+rows.  A full 5-fold run has been started with the same tmpdir, reusing fold 0
+and continuing folds 1-4.

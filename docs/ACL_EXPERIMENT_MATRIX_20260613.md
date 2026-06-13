@@ -245,13 +245,16 @@ Current residual data finding:
   `residual candidate v1` also has 1,783 rows and improves lightweight
   Macro-F1 from 0.9278 to 0.9305.  Conservative v1 is the first end-to-end
   RACL-U screen because it gives the cleaner ranking signal.
+- Residual conservative v1 fold-0 end-to-end RACL-U screen is strongly
+  positive: CLAIMARC selectiveRKC reaches AP 0.9651 / AUROC 0.9792 /
+  Macro-F1 0.9477 / wF1 0.8451, versus BGE-LR 0.9461 / 0.9716 / 0.9201 /
+  0.8110 on the same fold.  This justifies the full 5-fold run now in progress.
 
 ## Immediate Queue
 
-1. Finish residual conservative v1 fold-0 RACL-U screen on the GPU.  If it
-   preserves the fold-0 RACL-U/RACL-U+C gains, run the full 5-fold CV and
-   then source-conditioned RACL-U+C OOF calibration.
-2. If conservative v1 weakens CLAIMARC despite the lightweight AP gain, run
+1. Finish residual conservative v1 full 5-fold RACL-U CV on the GPU, then run
+   source-conditioned and selected RACL-U+C OOF calibration on the saved OOF.
+2. If the full 5-fold result does not preserve the fold-0 advantage, run
    residual candidate v1 fold-0; its lightweight Macro-F1 is better but AP is
    less clean.
 3. Promote source-conditioned RACL-U+C into a formal method variant and rerun
