@@ -55,6 +55,13 @@ EVIDENCE_INCOMPLETE_STATES = {
     "silver_refute_missing_product_evidence",
     "silver_refute_insufficient_product_evidence",
 }
+GUARDED_STATES = {
+    "silver_schema_meta_attribute",
+    "silver_subjective_eval_attribute",
+    "silver_commercial_promise_attribute",
+    "silver_attribute_semantic_drift",
+    "silver_enumeration_evidence_extra_values",
+}
 
 
 def read_queue(path: str | Path) -> dict[str, dict[str, Any]]:
@@ -155,6 +162,8 @@ def reliability_v2(
         c = min(c, 0.35)
     if state in AMBIGUOUS_STATES:
         c = min(c, 0.42)
+    if state in GUARDED_STATES:
+        c = min(c, 0.45)
     return round(max(0.03, c), 4)
 
 
