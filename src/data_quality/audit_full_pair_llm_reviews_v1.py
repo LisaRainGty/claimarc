@@ -70,6 +70,9 @@ COMMERCIAL_PROMISE_ATTRS = {
     "广告参与",
     "过度营销",
     "价格欺诈",
+    "活动价格",
+    "促销价格",
+    "赠品溢价程度",
 }
 GENERIC_ATTRIBUTE_NAMES = {
     "描述",
@@ -92,10 +95,13 @@ SCHEMA_META_ATTRS = {
     "实物图描述",
     "与事实不符",
     "描述不符",
+    "视频描述",
     "宣传内容",
     "直播宣传效果",
     "宣传效果",
     "宣传力度",
+    "广告投入",
+    "夸大其词",
 }
 SCHEMA_META_ATTR_TERMS = {"宣传与实物匹配度"}
 SUBJECTIVE_EVAL_ATTR_TERMS = {

@@ -15,6 +15,11 @@ from pathlib import Path
 from typing import Any
 
 from common.io_utils import read_jsonl, write_json, write_jsonl
+from data_quality.build_full_pair_promoted_dataset_v1 import (
+    commercial_promise_attr,
+    schema_meta_attr,
+    subjective_eval_attr,
+)
 
 
 def clean(value: Any) -> str:
@@ -202,6 +207,7 @@ def main() -> None:
     selected: list[dict[str, Any]] = []
     missing_queue_rows = 0
     skipped_no_detail_images = 0
+    skipped_guarded_attribute: Counter = Counter()
     review_rows = 0
 
     for rank, review in enumerate(read_jsonl(args.reviews), 1):
@@ -212,6 +218,15 @@ def main() -> None:
         queue_row = queue_by_pair.get(pid)
         if not queue_row:
             missing_queue_rows += 1
+            continue
+        if schema_meta_attr(queue_row):
+            skipped_guarded_attribute["schema_meta"] += 1
+            continue
+        if subjective_eval_attr(queue_row):
+            skipped_guarded_attribute["subjective_eval"] += 1
+            continue
+        if commercial_promise_attr(queue_row):
+            skipped_guarded_attribute["commercial_promise"] += 1
             continue
         if args.require_detail_images and image_count(queue_row) == 0:
             skipped_no_detail_images += 1
@@ -234,6 +249,7 @@ def main() -> None:
         "limit": args.limit,
         "missing_queue_rows": missing_queue_rows,
         "skipped_no_detail_images": skipped_no_detail_images,
+        "skipped_guarded_attribute": dict(skipped_guarded_attribute),
         "source_claim_evidence_relation": dict(Counter(clean((r.get("_evidence_repair") or {}).get("source_claim_evidence_relation")) for r in selected)),
         "source_product_evidence_found": dict(Counter(str(bool((r.get("_evidence_repair") or {}).get("source_product_evidence_found"))) for r in selected)),
         "category": dict(Counter(clean(r.get("category")) for r in selected)),
